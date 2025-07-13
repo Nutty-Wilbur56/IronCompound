@@ -50,6 +50,7 @@ def public_key_fingerprint(pubkey):
     )
 
 def vpn_client(server_ip='192.168.8.1', port=1871):
+    # main function that handles pseudo vpn Client
     print("[+] Starting VPN client...")
     # Store recent nonces to avoid replay attacks
     recent_nonces = set()
@@ -59,11 +60,14 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     set_up_tun('tun1', '10.8.0.2')
     add_default_route()
 
-    private_key = load_private_key('iron_client_private.pem')
+    private_key = load_private_key('fake_key_name.pem')
+    # client's private key: using a fake name, since code is going to be public on GitHub
     public_key = private_key.public_key()
+    # client's public key
 
     sock = socket.socket()
     sock.connect((server_ip, port))
+    # creation of socket
     logging.info(f"Connected to VPN server at {server_ip}:{port}")
 
     pubkey_bytes = public_key.public_bytes(
@@ -72,8 +76,6 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     )
     sock.send(pubkey_bytes)
 
-    """server_pubkey_bytes = sock.recv(2048)
-    server_pubkey = serialization.load_pem_public_key(server_pubkey_bytes)"""
 
     # loads in the trusted public key of VPN server
     with open("iron_server_public.pem", 'rb') as f:
@@ -83,7 +85,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     server_public_key_bytes = sock.recv(2048)
     server_public_key = serialization.load_pem_public_key(server_public_key_bytes)
 
-    # Comparing fingerprints
+    # Comparing fingerprints of received server key and actual public server jey
     if public_key_fingerprint(trusted_server_key) != public_key_fingerprint(server_public_key):
         logging.error("[!] Server public key does not match trusted key! Possible MITM.")
         sock.close()
@@ -109,6 +111,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     logging.info("AES key exchanged")
 
     while True:
+        # transfer of packets occurs in this loop
         r, _, _ = select.select([tun, sock], [], [])
         if tun in r:
             packet = os.read(tun, 2048)
