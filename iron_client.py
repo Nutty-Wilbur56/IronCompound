@@ -1,4 +1,5 @@
-# client.py
+# file serves as a pseudo client
+# as of right now my router serves both purposes of client and server
 from collections import deque
 import os
 import socket
@@ -23,12 +24,14 @@ logging.basicConfig(
 )
 
 def create_tun(name='tun1'):
+    # establishes separate tunnel for client
     tun = os.open('/dev/net/tun', os.O_RDWR)
     ifr = struct.pack('16sH', name.encode(), IFF_TUN | IFF_NO_PI)
     fcntl.ioctl(tun, TUNSETIFF, ifr)
     return tun
 
 def set_up_tun(name, ip):
+    # function sets up tunnel for client on the router
     subprocess.run(['ip', 'addr', 'add', f'{ip}/24', 'dev', name])
     subprocess.run(['ip', 'link', 'set', name, 'up'])
 
@@ -99,6 +102,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
             label=None
         )
     )
+    # ecryption of keys
     sock.send(enc_key)
 
     aes = AESGCM(aes_key)
