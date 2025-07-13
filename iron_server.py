@@ -70,6 +70,7 @@ ADMINISTRATIVE_SOCK = 'administration/sock file'
 # not using actual name of sock file, since code will be public on github
 
 def load_schindlers_list():
+    # function handles blacklisted tokens
     global gulag_tokens
     if os.path.exists(SCHINDLERS_LIST):
         with open(SCHINDLERS_LIST, 'r') as file:
@@ -158,6 +159,7 @@ def socket_admin_handler(command):
 
 """def flush_iptables():
     # flushing ip tables
+    # function will force server to flush all IP tables, if server is ever shutdown and reactivated
     try:
         # Flush all chains in filter table
         subprocess.run(["iptables", "-F"], check=True)
