@@ -18,6 +18,9 @@ TUNSETIFF = 0x400454ca
 IFF_TUN   = 0x0001
 IFF_NO_PI = 0x1000
 
+inactivity = 1000
+# Inactivity serves as monitor for clients whose activity on the server is very low
+
 """Beginning of global thread lock variables"""
 active_clients = 0
 client_lock = threading.Lock()
@@ -32,7 +35,7 @@ client_socket_lock = threading.Lock()
 # establishment of dictionary that will store socket info of each client
 # establishment of lock for client sockets
 
-SCHINDLERS_LIST = "gulag.json"
+SCHINDLERS_LIST = "temp.json"
 gulag_tokens = set()
 gulag_lock = threading.Lock()
 # gugaga tokens consist of all the session tokens that were utilized to violate or breach the server
@@ -49,12 +52,18 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
 )
 
-# Set up logger
+# beginning of logic for creating timeout log
+timeout_logger = ('timeout.log')
+timeout_lock = logging.getLogger("timeout_logger")
+timeout_handler = logging.FileHandler(timeout_logger)
+timeout_handler.setFormatter('%(asctime)s [%(threadName)s] %(levelname)s: %(message)s')
+timeout_logger.addHandler(timeout_handler)
+timeout_logger.setLevel(logging.INFO)
+# ending of timeout log logic
+
+# Set up main server logger
 logger = logging.getLogger("vpn")
 logger.setLevel(logging.INFO)
-
-# administrative logging
-admin_logger = logging.getLogger("vpn")
 
 # Log rotation: max 1MB per file, keep 5 backups
 handler = RotatingFileHandler("vpn_server.log", maxBytes=1_000_000, backupCount=5)
@@ -66,7 +75,7 @@ logger.addHandler(handler)
 
 client_counter = count(1)
 
-ADMINISTRATIVE_SOCK = 'administration/sock file'
+ADMINISTRATIVE_SOCK = 'administration/iron_admin.sock'
 # not using actual name of sock file, since code will be public on github
 
 def load_schindlers_list():
@@ -136,9 +145,7 @@ def socket_admin_handler(command):
             return f"[!] Client {cid} was not found"
 
     elif command.startswith("revoke token "):
-        # blacklisted_tokens.add(tokens)
-        # blacklisted tokens is a list of tokens that are perceived to be threats
-        # will be adding to the server in the future
+        # action to revoke token of session and add to token blacklist.
         token = command.split()[1]
         with gulag_lock:
             gulag_tokens.add(token)
@@ -156,6 +163,22 @@ def socket_admin_handler(command):
         )
     else:
         return "[!] Comrade, you have issued an unknown command. Type 'help'."
+
+def save_client_sessions():
+    # enables vpn server to save client sessions, if server were to restart
+    with session_lock:
+        with open('session_tokens', 'w') as session_file:
+            json.dump(session_tokens, session_file)
+
+def load_client_sessions():
+    # load client sessions from disk, when server restarts (if need be)
+    global session_tokens
+    try:
+        with open('session_tokens', 'r') as session_file:
+            session_tokens = json.load(session_file)
+    except FileNotFoundError:
+        session_tokens = {}
+
 
 """def flush_iptables():
     # flushing ip tables
@@ -229,6 +252,7 @@ def public_key_fingerprint(public_key):
 
 def handle_client(client_socket, addr, client_id):
     global active_clients
+    global inactivity
     start_time = time.time()
 
     tun_name = f"tun{client_id}"
@@ -255,8 +279,7 @@ def handle_client(client_socket, addr, client_id):
         logging.info(f"Client connected from {addr} assigned to {tun_name}")
 
         # Loading of trusted client public key
-        with open('random_public_key', 'rb') as f:
-            # key name is not the actual name of key in reality
+        with open('authorized_clients/iron_client_public.pem', 'rb') as f:
             trusted_client_key = serialization.load_pem_public_key(f.read())
 
         # Receival and parsing of received key
@@ -296,8 +319,10 @@ def handle_client(client_socket, addr, client_id):
         token = uuid.uuid1().hex
 
         with gulag_lock:
-            # placeholder check
-            # will be extending server's ability to have the gulag lock be persistant
+            # black listed tokens will be loaded upon startup (enable persistence)
+            gulag_tokens.add(token)
+            with open('administration/gulag.json', 'w') as gulag_file:
+                json.dump(list(gulag_tokens), gulag_file)
             if token in gulag_tokens:
                 logging.warning(f"[!] Blacklisted token {token} attempted to connect from {addr}")
                 client_socket.close()
@@ -311,13 +336,80 @@ def handle_client(client_socket, addr, client_id):
                 "token": token,
                 "ip": addr[0],
                 'fingerprint': fingerprint,
-                "start_time": start_time
+                "start_time": start_time,
+                "bytes_sent": 0,
+                "bytes_received": 0,
+                "last_activity": start_time,
+                'client warned': False
             }
+
 
         logging.info(f"[Client {client_id}] Session token: {token}]")
 
         # Tunnel communication loop
         while True:
+
+            # check on each client within session lock to monitor inactivity
+            with session_lock:
+                last_active = session_tokens[client_id]["last_activity"]
+                if time.time() - last_active > inactivity:
+                    if not session_lock[client_id]["client warned"]:
+                        logging.info(f"[Client {client_id}] sending keepalive warning before disconnect.")
+                        try:
+                            # sending a warning packet to client stating that they have been inactive for too long
+                            warning = (b"ATTENTION!!! you have been inactive for" + f"{inactivity // 60} minutes.".encode() + b"Please "
+                                       b"ensure that you become active once again in the next five minutes, "
+                                       b"otherwise you'll be removed from the server due to inactivity.")
+                            nonce = os.urandom(12)
+                            encrypted_warning = nonce + aes.encrypt(nonce, warning, None)
+                            client_socket.sendall(encrypted_warning)
+                            session_tokens[client_id]["warned"] = True
+
+                            inactivity += 300
+                            # adding 5 more minutes to inactivity variable to give user time to become active again
+                            # after warning
+                        except Exception as e:
+                            logging.warning(f'Failed to send keepalive warning: {e}')
+                            continue
+
+                    else:
+                        # beginning of disconnecting client from server
+                        logging.warning(f"[Client {client_id}] No response after warning — disconnecting.")
+                        timeout_logger.info(f"Client {client_id} ({addr[0]}) disconnected due to inactivity.")
+
+                        try:
+                            # actual removal of client from server
+                            client_disconnect = b"Due to your inactivity you are being removed from the server"
+                            nonce = os.random(12)
+                            encrypted_disconnect = nonce + aes.encrypt(nonce, client_disconnect, None)
+                            client_socket.sendall(encrypted_disconnect)
+                            #client_sockets_dict.pop(client_id, None)
+                            # ending of removal
+                        except Exception as e:
+                            logging.warning(f'Failed to send disconnect message: {e}')
+
+                        # logging session info of client that is being removed
+                        session_info = {
+                            'client_id': client_id,
+                            "ip": addr[0],
+                            "fingerprint": fingerprint,
+                            'token': token,
+                            "bytes_sent": session_tokens[client_id]["bytes_sent"],
+                            "start_time": session_tokens[client_id]["start_time"],
+                            "end_time": time.time(),
+                            'duration': time.time() - session_tokens[client_id]["start_time"],
+                            "reason_for_disconnection": "inactivity" or "normal" or "error"
+                        }
+
+                        with open('session_logs.json', 'a') as disconnection_file:
+                            disconnection_file.write(json.dumps(session_info) + '\n')
+
+                        logging.warning(f"[Client {client_id}] Inactive for {inactivity / 60} minutes - disconnecting")
+                        client_sockets_dict.pop(client_id, None)
+                        session_tokens.pop(client_id)
+                        client_socket.close()
+                        break
+
             r, _, _ = select.select([client_socket, tun], [], [])
             if client_socket in r:
                 data = client_socket.recv(4096)
@@ -343,13 +435,26 @@ def handle_client(client_socket, addr, client_id):
                 nonce_queue.append(nonce)
                 recent_nonces.add(nonce)
 
+                with session_lock:
+                    # update on each token in session lock
+                    session_tokens[client_id]["bytes_sent"] += len(packet)
+                    session_tokens[client_id]["last_activity"] = time.time()
+
                 os.write(tun, packet)
 
             if tun in r:
                 packet = os.read(tun, 2048)
                 nonce = os.urandom(12)
                 encrypted = nonce + aes.encrypt(nonce, packet, None)
+
+                with session_lock:
+                    # documenting when client receives a packet from server during session
+                    session_tokens[client_id]["bytes_received"] += len(packet)
+                    session_tokens[client_id]["last_activity"] = time.time()
+
                 client_socket.sendall(encrypted)
+
+
         # ending to tunnel and authentication logic
     except Exception as e:
         logging.error(f"[!] Exception with client {addr}: {e}", exc_info=True)
@@ -376,13 +481,22 @@ def handle_client(client_socket, addr, client_id):
             # removing client socket info of client that disconnected from client socket dictionary
             client_sockets_dict.pop(client_id)
 
-def vpn_server(host='0.0.0.0', port=1871):
+def vpn_server(host='fake ip', port=fake_port):
+    # utilizing fake ip and fake port for security purposes
     print("[+] Initializing VPN server...")
 
+    # establishment of server socket
     server_socket = socket.socket()
     server_socket.bind((host, port))
     server_socket.listen()
     logging.info(f"VPN server listening on {host}:{port}")
+
+    # persistant token black list (enables a permanent token blacklist)
+    try:
+        with open('administration/gulag.json', "r") as gulag_file:
+            gulag_tokens = set(json.load(gulag_file))
+    except FileNotFoundError:
+        gulag_tokens = set()
 
     with ThreadPoolExecutor(max_workers=25) as executor:
         threading.Thread(target=administrative_command_interface, daemon=True).start()
