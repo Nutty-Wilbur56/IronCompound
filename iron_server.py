@@ -201,8 +201,9 @@ def load_client_sessions():
     except subprocess.CalledProcessError as e:
         print(f"[!] Error flushing iptables: {e}")"""
 
-def create_tun(name='tun0'):
-    tun = os.open('/dev/net/tun', os.O_RDWR)
+def create_tun(name='fake name'):
+    tun = os.open('fake path', os.O_RDWR)
+    # tunnel being opened is going to contain fake reference and name for security purposes
     ifr = struct.pack('16sH', name.encode(), IFF_TUN | IFF_NO_PI)
     fcntl.ioctl(tun, TUNSETIFF, ifr)
     return tun

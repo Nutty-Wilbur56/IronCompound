@@ -49,7 +49,8 @@ def public_key_fingerprint(pubkey):
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
 
-def vpn_client(server_ip='192.168.8.1', port=1871):
+def vpn_client(server_ip='fake ip', port=fake_port):
+    # using fake ip and fake port for security purposes
     # main function that handles pseudo vpn Client
     print("[+] Starting VPN client...")
     # Store recent nonces to avoid replay attacks
@@ -58,6 +59,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
 
     tun = create_tun('tun1')
     set_up_tun('tun1', '10.8.0.2')
+    # not going to cover this up, since the client file is servign as a sudo file
     add_default_route()
 
     private_key = load_private_key('fake_key_name.pem')
@@ -78,7 +80,8 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
 
 
     # loads in the trusted public key of VPN server
-    with open("iron_server_public.pem", 'rb') as f:
+    with open("fake server public key", 'rb') as f:
+        # using fake server public key for security purposes
         trusted_server_key = serialization.load_pem_public_key(f.read())
 
     # receiving of server key and then parsing of key
@@ -95,6 +98,17 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     official_server_key = server_public_key
     logging.info("[+] Server public key verified successfully")
 
+    # loading of client's saved token and/or starting of new session
+    try:
+        with open('client_token.txt', 'r') as client_token_file:
+            client_token = client_token_file.read().strip()
+            logging.info(f'[+] Loaded existing session token: {client_token}')
+    except FileNotFoundError:
+        client_token = 'New'
+        logging.info('[+] No existing token for client was found, requesting new session')
+
+    sock.sendall(client_token.encode() + b"\n")
+
     aes_key = os.urandom(32)
     enc_key = server_public_key.encrypt(
         aes_key,
@@ -109,6 +123,21 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
 
     aes = AESGCM(aes_key)
     logging.info("AES key exchanged")
+
+    # beginning of new session token
+    if client_token == 'New':
+        token_response = sock.recv(2048).decode().strip()
+
+        if token_response.startswith("Token: "):
+            new_client_token = token_response.split("Token: ")[1]
+            with open('client_token.txt', 'w') as token_file:
+                token_file.write(new_client_token)
+
+            logging.info(f'[+] Received and saved new session token: {new_client_token}')
+
+        else:
+            logging.warning(f'[!] Unexpected token response from server: {token_response}')
+    # ending to generating new session token
 
     while True:
         # transfer of packets occurs in this loop
