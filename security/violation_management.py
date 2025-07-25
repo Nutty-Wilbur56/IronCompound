@@ -21,18 +21,20 @@ class ViolationManager:
 
         violation_logger.warning(f"[Client {client_id}] Rule violated: {rule_name} (#{session['violations'][rule_name]})")
 
-        total = sum(session["violations"].values())
         if session["violations"][rule_name] == "Flooding Violation":
+            total = (session["violations"]['Flooding Violation'])
             if total > 1:
                 session["flagged_for_disconnect"] = True
                 violation_logger.warning(f"[Client {client_id}] Exceeded violation threshold — plan for disconnect")
 
         elif session["violations"][rule_name] == "Throttling Violation":
+            total = (session["violations"]['Throttling Violation'])
             if total > 3:
                 session["flagged_for_disconnect"] = True
                 violation_logger.warning(f"[Client {client_id}] Exceeded violation threshold — plan for disconnect")
 
         elif session["violations"][rule_name] == "Replay Violation":
+            total = (session["violations"]['Replay Violation'])
             if total > 2:
                 session["flagged_for_disconnect"] = True
                 violation_logger.warning(f"[Client {client_id}] Exceeded violation threshold — plan for disconnect")

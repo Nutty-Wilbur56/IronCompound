@@ -1,6 +1,11 @@
+import threading
 import time
 import logging
 import json
+from administration.gulag_manager import GulagManager
+from flooding.flooding_rule_manager import ICMPFloodRuleManager, SynFloodingRuleManager
+from iron_server import session_lock, session_tokens, client_socket_lock, client_sockets_dict
+
 
 class SecurityRule:
     """
@@ -12,7 +17,7 @@ class SecurityRule:
         self.action = action
 
     def evaluate_situation(self, session, client_id):
-        # evaulation
+        # evaluation of situation
         if self.condition(session):
             logging.info(f"[Legionnaire] triggered rule: {self.name} against client {client_id}")
             self.action(session, client_id)
@@ -47,6 +52,16 @@ class LegionnaireManager:
     def __init__(self):
         self.ips_rules = LegionnaireRuleset()
         self.enforcement = {} # tracking of client actions
+        self.interface = 'tun0'
+        self.start_packet_sniffers()
+
+    def start_packet_sniffers(self, client_id, pckt):
+        # function sniffs packets in the background to monitor for flooding attacks (whether SYN or ICMP)
+        threading.Thread(target=SynFloodingRuleManager.register_packet, args=(self.interface,), daemon=True).start()
+        # daemon thread for SYN flooding
+        threading.Thread(target=ICMPFloodRuleManager.monitor, args=(self.interface,), daemon=True).start()
+        # daemon thread for ICMP flooding
+        logging.info(f"[Legionnaire] Packet sniffers active on interface {self.interface}")
 
     def add_rule(self, rule: SecurityRule):
         self.ips_rules.add_rule(rule)
@@ -55,10 +70,24 @@ class LegionnaireManager:
     def evaluate_session(self, session_data, client_id):
         # evaluation of session against all IPS rules
         self.ips_rules.apply_all_rules(session_data, client_id)
+        if session_data.get('flagged_for_blacklist'):
+            logging.warning(f"[Legionnaire] Blacklisted client {client_id} due to violation of IPS rules")
+            # send token to gulag
+            GulagManager.send_to_gulag(session_data['token'])
 
-    """def log_enforced_actions(self):
-        for client_id, actions in self.enforcement.items():
-            logging.info(f"[Legionnaire] Enforced for client {client_id}: {actions}")"""
+            with session_lock:
+                session_tokens.pop(client_id, None)
+
+            with client_socket_lock:
+                sock = client_sockets_dict.pop(client_id, None)
+                if sock:
+                    try:
+                        sock.close()
+                        logging.info(f"successfully closed {client_id}'s socket")
+                    except Exception as e:
+                        logging.error(f"Error closing socket for client {client_id}: {e}")
+            return False
+        return True
 
     def reset(self):
         self.enforcement.clear()

@@ -1,7 +1,7 @@
 import time
 import logging
 from ips_manager import SecurityRule
-from security.legionnaire.flooding.flooding_rule_manager import FloodingRuleManager
+from security.legionnaire.flooding.flooding_rule_manager import SynFloodingRuleManager, ICMPFloodRuleManager
 from security.legionnaire.throttling.throttling_manager import ThrottleManager
 from security.legionnaire_logger import LegionnaireLogger
 from security.violation_management import ViolationManager
@@ -17,6 +17,7 @@ def get_legions_rules():
         ),
 
         SecurityRule(
+            # security rule for replay violations
             "Replay Violation",
             lambda session: session.get("replay_hits", 0) > 5,
             lambda session, client_id: (
@@ -31,18 +32,36 @@ def get_legions_rules():
         ),
 
         SecurityRule(
-            "Flooding Attack",
-            lambda session: FloodingRuleManager.should_session_be_flagged(session),
+            # security rule for flooding attacks
+            "SYN Flooding Attack",
+            lambda session: SynFloodingRuleManager.should_session_be_flagged(session),
             lambda session, client_id: (
-                ViolationManager.record_violation(session, 'Flooding Violation', client_id)
+                ViolationManager.record_violation(session, 'SYN Flooding Violation', client_id)
             )
         ),
 
         SecurityRule(
+            # security rule for flooding attacks
+            "ICMP Flooding Attack",
+            lambda session: ICMPFloodRuleManager.should_session_be_flagged(session),
+            lambda session, client_id: (
+                ViolationManager.record_violation(session, 'ICMP Flooding Violation', client_id)
+            )
+        ),
+
+        SecurityRule(
+            # security rule for throttling violations
             "Throttling Violation",
             lambda session: ThrottleManager.session_should_be_throttled(session),
             lambda session, client_id: (
                 ViolationManager.record_violation(session, 'Throttling Violation', client_id)
             )
+        ),
+
+        SecurityRule(
+            # security rule that imposes an automatic blacklist threshold
+            "Automatic Blacklist Threshold",
+            lambda session: sum(session["violations"].values()) >= 6,
+            lambda session, client_id: session.update({'flagged_for_blacklist': True})
         )
     ]

@@ -49,7 +49,7 @@ def public_key_fingerprint(pubkey):
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
 
-def vpn_client(server_ip='fake ip', port=fake_port):
+def vpn_client(server_ip='192.168.8.1', port=1871):
     # using fake ip and fake port for security purposes
     # main function that handles pseudo vpn Client
     print("[+] Starting VPN client...")
@@ -62,7 +62,7 @@ def vpn_client(server_ip='fake ip', port=fake_port):
     # not going to cover this up, since the client file is servign as a sudo file
     add_default_route()
 
-    private_key = load_private_key('fake_key_name.pem')
+    private_key = load_private_key('iron_server_public.pem')
     # client's private key: using a fake name, since code is going to be public on GitHub
     public_key = private_key.public_key()
     # client's public key

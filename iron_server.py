@@ -12,6 +12,15 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 import time
 import uuid
+from security.legionnaire import (
+    load_blacklist, save_blacklist, check_token_status, blacklist_token, ReplayProtection, check_user_activity
+)
+from security.legionnaire import ips_manager
+from security.legionnaire.ips_manager import LegionnaireManager, SecurityRule
+from security.legionnaire import legionnaire_rules
+from security.legionnaire.throttling.throttling_manager import ThrottleManager
+from administration.gulag_manager import GulagManager
+
 #import geoip2.database as gip2
 
 TUNSETIFF = 0x400454ca
@@ -35,7 +44,7 @@ client_socket_lock = threading.Lock()
 # establishment of dictionary that will store socket info of each client
 # establishment of lock for client sockets
 
-SCHINDLERS_LIST = "temp.json"
+SCHINDLERS_LIST = "gulag.json"
 gulag_tokens = set()
 gulag_lock = threading.Lock()
 # gugaga tokens consist of all the session tokens that were utilized to violate or breach the server
@@ -77,6 +86,37 @@ client_counter = count(1)
 
 ADMINISTRATIVE_SOCK = 'administration/iron_admin.sock'
 # not using actual name of sock file, since code will be public on github
+
+"""beginning of IPS creation"""
+# global instance of ips manager class
+legionnaire_ips = LegionnaireManager()
+
+# loading of the legionnaire's rules all at once
+for rule in legionnaire_rules.get_legions_rules():
+    legionnaire_ips.add_rule(rule)
+"""Ending of IPS creation"""
+
+replay_protection = ReplayProtection()
+
+# RULE: Kick clients inactive more than 10 mins
+def inactivity_exceeded(session):
+    return time.time() - session.get("last_activity", 0) > 600
+
+def disconnect_inactive_client(session, client_id):
+    logging.warning(f"[IPS] Client {client_id} flagged for inactivity. Disconnect requested.")
+    session["flagged_for_disconnect"] = True
+
+
+# RULE: Blacklist clients with > 5 replay attempts
+def excessive_replay_attempts(session):
+    return session.get("replay_hits", 0) > 5
+
+def blacklist_client(session, client_id):
+    #session["flagged_for_blacklist"] = True
+    logging.warning(f"[IPS] Client {client_id} flagged for blacklisting.")
+
+legionnaire_ips.add_rule(SecurityRule("Inactivity Disconnect", inactivity_exceeded, disconnect_inactive_client))
+legionnaire_ips.add_rule(SecurityRule("Replay Threshold Blacklist", excessive_replay_attempts, blacklist_client))
 
 def load_schindlers_list():
     # function handles blacklisted tokens
@@ -201,8 +241,8 @@ def load_client_sessions():
     except subprocess.CalledProcessError as e:
         print(f"[!] Error flushing iptables: {e}")"""
 
-def create_tun(name='fake name'):
-    tun = os.open('fake path', os.O_RDWR)
+def create_tun(name):
+    tun = os.open('/dev/net/tun', os.O_RDWR)
     # tunnel being opened is going to contain fake reference and name for security purposes
     ifr = struct.pack('16sH', name.encode(), IFF_TUN | IFF_NO_PI)
     fcntl.ioctl(tun, TUNSETIFF, ifr)
@@ -320,28 +360,36 @@ def handle_client(client_socket, addr, client_id):
         token = uuid.uuid1().hex
 
         with gulag_lock:
-            # black listed tokens will be loaded upon startup (enable persistence)
-            gulag_tokens.add(token)
-            with open('administration/gulag.json', 'w') as gulag_file:
-                json.dump(list(gulag_tokens), gulag_file)
+            # checking gulag lock oon specific client thread
             if token in gulag_tokens:
+                # logic for if client's token is blacklisted
                 logging.warning(f"[!] Blacklisted token {token} attempted to connect from {addr}")
+
+                try:
+                    client_socket.sendall(b"Your token is blacklisted. Connection refused.")
+                except:
+                    pass
                 client_socket.close()
-                return
 
         fingerprint = public_key_fingerprint(client_public_key).hex()
 
         with session_lock:
             # adding a session token once client and server are authenticated
             session_tokens[client_id] = {
+                'client_id': client_id,
                 "token": token,
                 "ip": addr[0],
                 'fingerprint': fingerprint,
                 "start_time": start_time,
                 "bytes_sent": 0,
                 "bytes_received": 0,
-                "last_activity": start_time,
-                'client warned': False
+                "violations": {
+                    "Throttling Violation": 0,
+                    "Replay Violation": 0,
+                    "Flooding Violation": 0,
+                },
+                'client warned': False,
+                "flagged_for_disconnect": False
             }
 
 
@@ -349,67 +397,45 @@ def handle_client(client_socket, addr, client_id):
 
         # Tunnel communication loop
         while True:
-
-            # check on each client within session lock to monitor inactivity
             with session_lock:
-                last_active = session_tokens[client_id]["last_activity"]
-                if time.time() - last_active > inactivity:
-                    if not session_lock[client_id]["client warned"]:
-                        logging.info(f"[Client {client_id}] sending keepalive warning before disconnect.")
-                        try:
-                            # sending a warning packet to client stating that they have been inactive for too long
-                            warning = (b"ATTENTION!!! you have been inactive for" + f"{inactivity // 60} minutes.".encode() + b"Please "
-                                       b"ensure that you become active once again in the next five minutes, "
-                                       b"otherwise you'll be removed from the server due to inactivity.")
-                            nonce = os.urandom(12)
-                            encrypted_warning = nonce + aes.encrypt(nonce, warning, None)
-                            client_socket.sendall(encrypted_warning)
-                            session_tokens[client_id]["warned"] = True
+                session = session_tokens[client_id]
+                legionnaire_ips.evaluate_session(session, client_id)
+                # legionnaire IPS evaluates each client session
 
-                            inactivity += 300
-                            # adding 5 more minutes to inactivity variable to give user time to become active again
-                            # after warning
-                        except Exception as e:
-                            logging.warning(f'Failed to send keepalive warning: {e}')
-                            continue
+                if session.get('flagged_for_disconnect'):
+                    logging.info(f"[Client {client_id}] past infractions triggered disconnect")
+                    timeout_logger.info(f"Client {client_id} ({addr[0]}) disconnected due to past infractions.")
 
-                    else:
-                        # beginning of disconnecting client from server
-                        logging.warning(f"[Client {client_id}] No response after warning — disconnecting.")
-                        timeout_logger.info(f"Client {client_id} ({addr[0]}) disconnected due to inactivity.")
+                    try:
+                        # beginning of client removal
+                        client_disconnect = b"Due to past infractions you are being removed from the server"
+                        nonce = os.urandom(12)
+                        encrypted_disconnect = nonce + aes.encrypt(nonce, client_disconnect, None)
+                        client_socket.sendall(encrypted_disconnect)
+                        # ending of removal
+                    except Exception as e:
+                        logging.warning(f'Failed to send disconnect message: {e}')
 
-                        try:
-                            # actual removal of client from server
-                            client_disconnect = b"Due to your inactivity you are being removed from the server"
-                            nonce = os.random(12)
-                            encrypted_disconnect = nonce + aes.encrypt(nonce, client_disconnect, None)
-                            client_socket.sendall(encrypted_disconnect)
-                            #client_sockets_dict.pop(client_id, None)
-                            # ending of removal
-                        except Exception as e:
-                            logging.warning(f'Failed to send disconnect message: {e}')
+                    # logging session info of client that is being removed
+                    session_info = {
+                        'client_id': client_id,
+                        "ip": addr[0],
+                        "fingerprint": fingerprint,
+                        'token': token,
+                        "bytes_sent": session_tokens[client_id]["bytes_sent"],
+                        "start_time": session_tokens[client_id]["start_time"],
+                        "end_time": time.time(),
+                        'duration': time.time() - session_tokens[client_id]["start_time"],
+                        "reason_for_disconnection": "past infraction"
+                    }
 
-                        # logging session info of client that is being removed
-                        session_info = {
-                            'client_id': client_id,
-                            "ip": addr[0],
-                            "fingerprint": fingerprint,
-                            'token': token,
-                            "bytes_sent": session_tokens[client_id]["bytes_sent"],
-                            "start_time": session_tokens[client_id]["start_time"],
-                            "end_time": time.time(),
-                            'duration': time.time() - session_tokens[client_id]["start_time"],
-                            "reason_for_disconnection": "inactivity" or "normal" or "error"
-                        }
+                    with open('session_logs.json', 'a') as disconnection_file:
+                        disconnection_file.write(json.dumps(session_info) + '\n')
 
-                        with open('session_logs.json', 'a') as disconnection_file:
-                            disconnection_file.write(json.dumps(session_info) + '\n')
-
-                        logging.warning(f"[Client {client_id}] Inactive for {inactivity / 60} minutes - disconnecting")
-                        client_sockets_dict.pop(client_id, None)
-                        session_tokens.pop(client_id)
-                        client_socket.close()
-                        break
+                    client_sockets_dict.pop(client_id, None)
+                    session_tokens.pop(client_id)
+                    client_socket.close()
+                    break
 
             r, _, _ = select.select([client_socket, tun], [], [])
             if client_socket in r:
@@ -419,9 +445,15 @@ def handle_client(client_socket, addr, client_id):
                 nonce = data[:12]
                 ciphertext = data[12:]
 
-                if nonce in recent_nonces:
-                    logging.warning(f"[!] Replay attack detected from {addr}. Dropping packet.")
-                    continue  # Drop duplicate packet
+                if replay_protection.existing_nonce(nonce):
+                    # checking to see if nonce that packet generated already exists
+                    logging.warning(f"[!] Replay attack detected from {addr}. dropping packet.")
+                    continue
+
+                replay_protection.register_nonce(nonce)
+
+                # track incoming encrypted packet size for throttling
+                ThrottleManager.record_transfer(client_id, len(ciphertext))
 
                 try:
                     packet = aes.decrypt(nonce, ciphertext, None)
@@ -443,18 +475,19 @@ def handle_client(client_socket, addr, client_id):
 
                 os.write(tun, packet)
 
-            if tun in r:
-                packet = os.read(tun, 2048)
-                nonce = os.urandom(12)
-                encrypted = nonce + aes.encrypt(nonce, packet, None)
+                if tun in r:
+                    packet = os.read(tun, 2048)
+                    nonce = os.urandom(12)
+                    encrypted = nonce + aes.encrypt(nonce, packet, None)
 
-                with session_lock:
-                    # documenting when client receives a packet from server during session
-                    session_tokens[client_id]["bytes_received"] += len(packet)
-                    session_tokens[client_id]["last_activity"] = time.time()
+                    with session_lock:
+                        # documenting when client receives a packet from server during session
+                        session_tokens[client_id]["bytes_received"] += len(packet)
+                        session_tokens[client_id]["last_activity"] = time.time()
 
-                client_socket.sendall(encrypted)
-
+                    # Tracking of outgoing cleartext payload size
+                    ThrottleManager.record_transfer(client_id, len(packet))
+                    client_socket.sendall(encrypted)
 
         # ending to tunnel and authentication logic
     except Exception as e:
@@ -482,7 +515,7 @@ def handle_client(client_socket, addr, client_id):
             # removing client socket info of client that disconnected from client socket dictionary
             client_sockets_dict.pop(client_id)
 
-def vpn_server(host='fake ip', port=fake_port):
+def vpn_server(host='0.0.0.0', port=1871):
     # utilizing fake ip and fake port for security purposes
     print("[+] Initializing VPN server...")
 
