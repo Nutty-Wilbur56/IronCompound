@@ -1,15 +1,21 @@
+"""
+file contains all the classifier classes
+"""
+from pathlib import Path
+
 import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import joblib
+from sympy.codegen.cnodes import static
 
 # loading pseudo session data
-session_df = pd.read_csv('session_train.csv')
+session_df = pd.read_csv('../training_data.csv')
 
 # Feature and Label selection
-X = session_df[["bytes_sent", "bytes_received", "replay_violations", "throttle_violations", "flooding_violations",
+X = session_df[["bytes_sent", "bytes_received", "replay_violations", "throttle_violations", "syn_flood_violations", "icmp_flood_violations",
                 "duration"]].values
 y = session_df['was_flagged'].values
 
@@ -35,7 +41,7 @@ class SessionClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc = nn.Sequential(
-            nn.Linear(6, 32),
+            nn.Linear(7, 32),
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(32, 16),
@@ -66,3 +72,33 @@ for epoch in range(20):
 torch.save(model.state_dict(), 'classifier.pt')
 
 joblib.dump(session_scaler, 'scaler.pkl')
+
+class IronSessionClassifier:
+    model_path = "scaler.pkl"
+    model = None
+
+    @staticmethod
+    def load_iron_model():
+        if SessionClassifier.model:
+            if SessionClassifier.model_path.exists():
+                SessionClassifier.model = joblib.load(SessionClassifier)
+
+            else:
+                raise FileNotFoundError("Model file not found.")
+
+    @staticmethod
+    def classify_session(session):
+        SessionClassifier.load_iron_model()
+
+        features = [
+            session.bytes_sent,
+            session.bytes_received,
+            session.replay_violations,
+            session.throttle_violations,
+            session.syn_flood_violations,
+            session.icmp_flood_violations
+        ]
+
+        prediction = SessionClassifier.model.predict([features])[0]
+        return prediction == 1
+

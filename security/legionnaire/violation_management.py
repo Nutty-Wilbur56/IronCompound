@@ -15,19 +15,17 @@ class ViolationManager:
 
     @ staticmethod
     def record_violation(session, rule_name, client_id):
+        # beginning of code for dynamic violations
+        client_id
+
+        # beginning of code for general violations
         session.set_default("violations", {})
         session['violations'].setdefault(rule_name, 0)
         session['violations'][rule_name] += 1
 
         violation_logger.warning(f"[Client {client_id}] Rule violated: {rule_name} (#{session['violations'][rule_name]})")
 
-        if session["violations"][rule_name] == "Flooding Violation":
-            total = (session["violations"]['Flooding Violation'])
-            if total > 1:
-                session["flagged_for_disconnect"] = True
-                violation_logger.warning(f"[Client {client_id}] Exceeded violation threshold — plan for disconnect")
-
-        elif session["violations"][rule_name] == "Throttling Violation":
+        if session["violations"][rule_name] == "Throttling Violation":
             total = (session["violations"]['Throttling Violation'])
             if total > 3:
                 session["flagged_for_disconnect"] = True

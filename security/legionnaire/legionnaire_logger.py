@@ -44,19 +44,3 @@ class LegionnaireLogger:
         if LegionnaireLogger.ALERT_SERVER:
             print(
                 f"\033[91m[IPS ALERT] Rule '{rule_name}' triggered for client {client_id} ({hit_list_entry['ip']}) → {action.upper()}\033[0m")
-
-    """@staticmethod
-    def log_custom(message: str):
-    # ehh, might implement function later on, might not
-        IPSLogger._ensure_log_dir()
-        entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "message": message
-        }
-
-        with log_lock:
-            try:
-                with open(IPSLogger.LOG_FILE, "a") as f:
-                    f.write(json.dumps(entry) + "\n")
-            except Exception as e:
-                logging.error(f"[IPSLogger] Failed to log custom message: {e}")"""

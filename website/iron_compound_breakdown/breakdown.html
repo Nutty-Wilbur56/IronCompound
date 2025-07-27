@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="iron.css">
+    <meta charset="UTF-8">
+    <title>Breakdown of IronCompound</title>
+</head>
+<body>
+<div id="iron-compound-navigation">
+    <nav>
+        <button><a href="../Welcome_Page.html">Back to Welcome Page</a></button>
+        <button><a href="/importance/VPN_importance.html">Importance of VPNs</a></button>
+    </nav>
+</div>
+
+<div class="container1">
+    <h1>Breakdown of Iron Compound</h1>
+
+    <h2>VPN server</h2>
+
+    <h3>Encryption of Communication</h3>
+    <article>
+        When a client initiates a connection to the server, both the server and client have to verify each others
+        identity.
+    </article>
+
+    <h3>Session Lock</h3>
+
+    <article>
+
+    </article>
+
+    <h3>Client Lock</h3>
+
+    <article>
+
+    </article>
+
+    <h2>Administration Socket</h2>
+
+    <article>
+
+    </article>
+
+    <h2>Intrusion Prevention System: The Legionnaire</h2>
+    <article>
+        Unlike other VPNs, IronCompound utilizes an integrated Intrusion Prevention System; The Legionnaire,
+        to monitor threats against the VPN server. What is an Intrusion Prevention System, you may ask...Intrusion
+        Detection
+        Systems are like advanced firewalls, but at the same time different. Intrusion Prevention Systems filter network
+        traffic
+        to root out malicious packets and or activity. Unlike regular firewalls that root out just the malicious
+        packets,
+        IPS's (at least mine is) are capable of barring potentially malicious clients from connecting to a server,
+        router, or
+        any other networking device. So far, the Legionnaire is designed to filter for SYN flood attacks and ICMP echo
+        flood
+        attacks. Apart from monitoring attacks, the IPS is also where most of the logging of security violations take
+        place.
+        Simple interactions with the server, such as initial connection, are logged with the server. One more use for
+        that the IPS does is
+        it tracks the list of active clients. The server, as previously mentioned, also tracks the amount of clients but
+        for
+        different purposes.
+    </article>
+
+    <h3>Artificial Intelligence</h3>
+    <article>
+        As described previously, The Legionnaire monitors network traffic for SYN flooding and ICMP echo
+        flooding. In order for the Legionnaire to learn to filter for these attacks, the IPS is paired with a machine
+        learning pipeline. As
+        of right now the AI pipeline is fairly simple and rudimentary, given that the session data I am feeding the
+        pipeline
+        is pseudo data.
+    </article>
+
+    <h3>Rule Policy Engine: Caesar</h3>
+    <article>
+        Caesar, The Legionnaire's rule policy engine is a centralization of registering and adding the rules that The
+        Legionnaire enforces.
+        The engine also evaluates sessions every time a client interacts with the server.
+    </article>
+
+    <h3>Session Tracking</h3>
+    <article>
+        Session tracking is part of the aforementioned rule policy engine.
+    </article>
+
+    <h3>Violation Manager</h3>
+    <article>
+        The violation manager is where violations are logged and actions set by the rule policy engine are enforced.
+        For the violation manager to commit to a reprehensible action, clients have to cross specific thresholds
+    </article>
+    <div class="container2">
+
+        <h1>Future Development Ideas</h1>
+
+        <h3>Integration of Intrusion Detection System</h3>
+
+        <h3>Implementation of Active Learning AI Algorithm</h3>
+    </div>
+
+
+</div>
+
+</body>
+</html>
