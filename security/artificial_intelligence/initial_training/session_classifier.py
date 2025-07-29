@@ -12,7 +12,7 @@ import joblib
 from sympy.codegen.cnodes import static
 
 # loading pseudo session data
-session_df = pd.read_csv('../training_data.csv')
+session_df = pd.read_csv('training_data.csv')
 
 # Feature and Label selection
 X = session_df[["bytes_sent", "bytes_received", "replay_violations", "throttle_violations", "syn_flood_violations", "icmp_flood_violations",
@@ -24,7 +24,7 @@ session_scaler = StandardScaler()
 session_scaled = session_scaler.fit_transform(X)
 
 # split
-X_train, X_test, y_train, y_test = train_test_split(session_scaled, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(session_scaled, y, test_size=0.30, random_state=42, shuffle=True)
 
 # conversion of tensors
 

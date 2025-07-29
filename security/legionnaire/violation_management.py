@@ -1,38 +1,33 @@
 import logging
 
-# Creation of violation manager logger
-violation_logger = logging.getLogger("ips")
-violation_logger.setLevel(logging.INFO)
-
-file_handler = logging.FileHandler("logs/violations.log")
-file_handler.setLevel(logging.INFO)
-
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-# ending
+from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from security.session_tracking.sess_track import SessionTracker
 
 class ViolationManager:
-
+    # Violation thresholds before triggering disconnect
+    VIOLATION_THRESHOLDS = {
+        "Throttling Violation": 3,
+        "Replay Violation": 2,
+        "SYN Flood Violation": 1,
+        "ICMP Flood Violation": 2,
+        # Add more rules as needed
+    }
     @ staticmethod
-    def record_violation(session, rule_name, client_id):
+    def record_violation(rule_name, client_id):
         # beginning of code for dynamic violations
-        client_id
+        if not client_id not in SessionTracker.client_sessions:
+            LegionnaireLogger.log_legionnaire_activity(f"[ViolationManager] Unknown client ID: {client_id}")
+            return
+        SessionTracker.client_sessions[client_id].setdefault("violations", {})
+        SessionTracker.client_sessions[client_id][rule_name] += 1
+        violation_count = SessionTracker.client_sessions[client_id][rule_name]
+        LegionnaireLogger.log_legionnaire_activity(
+            f"[Client {client_id}] Rule violated: {rule_name} (#{violation_count})"
+        )
 
-        # beginning of code for general violations
-        session.set_default("violations", {})
-        session['violations'].setdefault(rule_name, 0)
-        session['violations'][rule_name] += 1
-
-        violation_logger.warning(f"[Client {client_id}] Rule violated: {rule_name} (#{session['violations'][rule_name]})")
-
-        if session["violations"][rule_name] == "Throttling Violation":
-            total = (session["violations"]['Throttling Violation'])
-            if total > 3:
-                session["flagged_for_disconnect"] = True
-                violation_logger.warning(f"[Client {client_id}] Exceeded violation threshold — plan for disconnect")
-
-        elif session["violations"][rule_name] == "Replay Violation":
-            total = (session["violations"]['Replay Violation'])
-            if total > 2:
-                session["flagged_for_disconnect"] = True
-                violation_logger.warning(f"[Client {client_id}] Exceeded violation threshold — plan for disconnect")
+        violation_threshold = ViolationManager.VIOLATION_THRESHOLDS.get(rule_name)
+        if violation_count >= violation_threshold:
+            SessionTracker.is_session_flagged(client_id)
+            LegionnaireLogger.log_legionnaire_activity(
+                f"[Client {client_id}] Exceeded {rule_name} threshold ({violation_count}/{violation_threshold}) — flagged for disconnect"
+            )

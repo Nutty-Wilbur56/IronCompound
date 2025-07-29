@@ -11,7 +11,7 @@ class SessionTracker:
             SessionTracker.client_sessions[client_id] = {
                 'ip_address': ip_address,
                 "start_time": connection_time,
-                'violations': [],
+                'violations': {},
                 **kwargs
             }
             SessionTracker.client_ip_mapping[ip_address] = client_id
@@ -22,10 +22,20 @@ class SessionTracker:
             return SessionTracker.client_ip_mapping[client_ip]
 
     @staticmethod
+    def get_session_info(client_id):
+        if client_id in SessionTracker.client_sessions:
+            return SessionTracker.client_sessions[client_id]
+
+    """@staticmethod
     def record_violation(client_id, violation):
         with SessionTracker.tracker_lock:
             if client_id in SessionTracker.client_sessions:
-                SessionTracker.client_sessions[client_id]["violations"].append(violation)
+                SessionTracker.client_sessions[client_id]["violations"].append(violation)"""
+
+    @staticmethod
+    def flag_session(client_id):
+        if not SessionTracker.client_sessions[client_id]["flagged_for_disconnect"]:
+            SessionTracker.client_sessions[client_id]["flagged_for_disconnect"] = True
 
     @staticmethod
     def end_session(client_id):
@@ -35,6 +45,10 @@ class SessionTracker:
                 SessionTracker.client_ip_mapping.pop(session["ip"], None)
 
     @staticmethod
-    def get_session(client_id):
-        with SessionTracker.tracker_lock:
-            return SessionTracker.client_sessions.get(client_id)
+    def is_session_flagged(client_id):
+        # centralized and off ramp way of checking session to see if it's flagged for disconnection
+        if client_id in SessionTracker.client_sessions:
+            if SessionTracker.client_sessions[client_id]['flagged_for_disconnect']:
+                return True
+            else:
+                return False
