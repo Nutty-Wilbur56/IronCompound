@@ -1,22 +1,11 @@
 .container1{
-    background-color:#242F36 ;
+    background-color:#0D0D0D ;
     text-align: center;
     border-radius: 10px;
     color: #39FF14;
-    font-family: "Courier New";
-
-    padding-right: 20px;
-    padding-left: 20px;
-    margin-right: 10px;
-    margin-left: 10px;
 }
-
 .container1 h1{
     text-shadow: 2px 2px 5px #27AE60;
-}
-
-body{
-    background-color: #0D0D0D;
 }
 
 .container2{
@@ -24,7 +13,7 @@ body{
     margin-top: 5px;
     margin-right: 40px;
     margin-left: 40px;
-    background-color:#242F36;
+    background-color:#0D0D0D;
     color: #39FF14;
     text-align: center;
     border-radius: 10px;

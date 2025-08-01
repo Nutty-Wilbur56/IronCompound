@@ -1,10 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Title</title>
+    <link rel="stylesheet" href="history.css">
+    <meta charset="UTF-8">
+    <title>VPN History</title>
 </head>
-<body>
+<body style="background-color: black">
 
+<div id="buttons">
+    <nav>
+        <button><a href="../Welcome_Page.html">Homepage</a></button>
+        <button><a href="../../breakdown.html">Breakdown of Iron Compound</a></button>
+    </nav>
+</div>
+<div class="container1">
+    <h1>History of VPNs</h1>
+    <div class="container2">
+        <h2>1970s: Creation of the internet</h2>
+        <article>
+            Spawned from ARPA (the Pentagon's Advanced Research Facility)
+            in the late 1960's early 70s, ARPANET was developed off a network system based on Packet Switching.
+            ARPANET soon expanded fairly rapidly to incorporate research and education centers. However, ARPANET was
+            restricted
+            in its capabilities, since the network ran on Network Control Protocol. This allowed devices to connect
+            ARPANET
+            only if the devices were on the same network. There was also another model of networking that went into the
+            development
+            of ARPANET's development, the OSI model.
+        </article>
+        <h2>1980s: Development of the TCP/IP model</h2>
+        <article>
+            Development of the Transmission Control Protocol/Internet Protocol model in the 1980s began the shift
+            towards development
+            of inter-networked remote devices. This newly developed model was based off the OSI model, but it
+            centralized
+            the purpose of each model layer. These layers are the Physical Layer, IP layer, Transport Layer, and
+            Application
+            Layer
+        </article>
+
+        <h2>1985: Launch of first major online platform; AOL</h2>
+        <article>
+            Soon after the development of the TCP/IP model, AOL was established as one of the first major online
+            platforms.
+        </article>
+
+        <h2>1990s: Development of early VPN protocols</h2>
+        <h3>PPTP</h3>
+        <article>
+            PPTP (Point-to-Point Tunneling Protocol) serves the purpose of establishing secure VPN connections over the
+            internet.
+            PPTP establishes these connections by encapsulating (PPP) frames in IP packets whilst they're traversing the
+            internet.
+            These connections however are nothing special. The VPN tunnels are created through what's called a Generic
+            Routing
+            Encapsulation tunnel. The tunnelling operations can be set in two different modes, voluntary and compulsory.
+            Voluntary
+            tunneling occurs when a client initiates a connection and the network connection is made. Compulsory
+            tunneling occurs
+            when the server initiates tunneling at the ISP level.
+        </article>
+
+        <h3>L2F</h3>
+        <article>
+            Developed by Cisco, the Layer 2 Forwarding is utilized to establish secure end point tunnels across public
+            infrastructure
+            connecting ISP's to enterprise home gateways.
+        </article>
+
+        <h3>L2TP</h3>
+        <article>
+            Unlike other protocols, LT2P (Layer 2 Tunneling Protocol) establishes connections between clients and VPN
+            servers without
+            encrypting client/server payloads. With this in mind, LT2P utilizes IPsec to provide encryption. IPSec also
+            controls
+            the data travelling between VPN endpoints. Going into more detail, once tunnels between endpoints are
+            created, the following
+            data transfer process ensues. Data that client wants to send is broken up into packets and then IPSec
+            encrypts payload
+            of the packet(s). LT2P encapsulates encrypted packets into its own packets in order to create tunnel to
+            safely transport
+            data through the public environment. The packets are then sent over the internet and LT2P un-encapsulates
+            the packets at
+            the receiving end and IPSec proceeds to decrypt them. The decrypted packets then have their original data
+            restored
+            enabling access to them on the LAN of the VPN server.
+        </article>
+
+        <h2>VPN protocols of the 2000s - 2020s</h2>
+        <h3>OpenVPN</h3>
+        <article>
+            OpenVPN was developed in 2001 as a reliable and secure VPN protocol. The protocol operates on two styles of
+            transport
+            protocols, TCP to ensure control over data transmission and UDP for faster connections. This variance
+            enables OpenVPN
+            to cater to wide ranges of user preferences and use cases. The backbone of security, authentication, and
+            encryption within the protocol falls upon the OpenSSL library. OpenVPN can also serve as a VPN software. Any
+            user
+            will have to download VPN client in order to connect to the vpn server.
+        </article>
+        <h3>SSL VPN</h3>
+        <article>
+            Developed as a secure response to the growing need for work from home situations, the SSL VPN protocol
+            enables
+            users to access an organization's network without needing specialized software. Within the protocol there
+            are
+            two types of SSL VPNs, SSL portal VPN and SSL tunnel VPN. SSL portal VPNs operate by allowing a user a
+            single VPN
+            connection after entering credentials to initiate a secure connection. SSL tunnel VPNs, on the other hand,
+            enable
+            users to access the VPN through a browser that tunnels user into their organization through proprietary
+            software
+            or networks
+        </article>
+        <h3>SSTP</h3>
+        <article>
+            SSTP (Secure Socket Tunneling Protocol) operates through creating a tunnel between client devices and vpn
+            server.
+            This protocol was primarily developed by Microsoft to replace PPTP and L2TP in order to secure remote access
+            to
+            private networks over the internet. How does SSTP work though? SSTP establishes encrypted tunnels between
+            client and server,
+            however unlike PPTP, SSTP utilizes SSL/TLS and port 443 to manage security nad firewall traversal.
+        </article>
+    </div>
+
+</div>
 </body>
 </html>

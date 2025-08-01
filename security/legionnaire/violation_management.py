@@ -9,7 +9,7 @@ class ViolationManager:
         "Throttling Violation": 3,
         "Replay Violation": 2,
         "SYN Flood Violation": 1,
-        "ICMP Flood Violation": 2,
+        "ICMP Flood Violation": 1,
         # Add more rules as needed
     }
     @ staticmethod

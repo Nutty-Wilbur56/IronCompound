@@ -1,6 +1,4 @@
-data = {
-    "data": 0
-}
+import socket
 
-if "data" not in data:
-    print("ji")
+hostname = socket.gethostname()
+print("Hostname:", hostname)

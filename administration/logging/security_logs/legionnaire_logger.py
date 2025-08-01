@@ -1,10 +1,14 @@
 import logging
 
 class LegionnaireLogger:
-    legionnaire_logger = 'security.log'
+    legionnaire_logfile = 'security.log'
     timeout_lock = logging.getLogger("timeout_logger")
-    legionnaire_handler = logging.FileHandler(legionnaire_logger)
-    legionnaire_handler.setFormatter('%(asctime)s [%(threadName)s] %(levelname)s: %(message)s')
+
+    # Properly initialize the main logger
+    legionnaire_logger = logging.getLogger("legionnaire_logger")
+    legionnaire_handler = logging.FileHandler(legionnaire_logfile)
+    formatter = logging.Formatter('%(asctime)s [%(threadName)s] %(levelname)s: %(message)s')
+    legionnaire_handler.setFormatter(formatter)
     legionnaire_logger.addHandler(legionnaire_handler)
     legionnaire_logger.setLevel(logging.INFO)
 

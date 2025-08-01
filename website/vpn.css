@@ -1,8 +1,14 @@
 .container1{
-    background-color:#0D0D0D ;
+    background-color:#242F36 ;
     text-align: center;
     border-radius: 10px;
     color: #39FF14;
+    font-family: "Courier New";
+
+    padding-right: 20px;
+    padding-left: 20px;
+    margin-right: 10px;
+    margin-left: 10px;
 }
 .container1 h1{
     text-shadow: 2px 2px 5px #27AE60;
@@ -11,12 +17,17 @@
 .container2{
     padding: 2.5px;
     margin-top: 5px;
-    margin-right: 40px;
-    margin-left: 40px;
-    background-color:#0D0D0D;
+    background-color:#242F36;
     color: #39FF14;
     text-align: center;
     border-radius: 10px;
+
+    font-family: "Courier New";
+
+    padding-right: 20px;
+    padding-left: 20px;
+    margin-right: 10px;
+    margin-left: 10px;
 }
 
 div #buttons {
