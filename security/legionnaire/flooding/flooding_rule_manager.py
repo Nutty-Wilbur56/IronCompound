@@ -110,9 +110,9 @@ class IcmpFloodingRuleManager:
             IcmpFloodingRuleManager.icmp_attempts[client_id].append(now)
 
     @staticmethod
-    def should_session_be_flagged(session):
+    def should_session_be_flagged(client_id):
         # function for determining if session should be flagged for an ICMP echo request attack
-        client_id = session.client_id
+
         now = time.time()
 
         IcmpFloodingRuleManager.icmp_attempts[client_id] = [

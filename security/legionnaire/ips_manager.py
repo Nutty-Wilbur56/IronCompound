@@ -2,6 +2,7 @@ import json
 import threading
 import logging
 from datetime import datetime
+from xml.etree.ElementTree import tostring
 
 import joblib
 import torch
@@ -67,10 +68,10 @@ class LegionnaireManager:
 
     def check_if_client_in_gulag(self, client_ip):
         # function for checking if client is in gulag, via client's external ip
-        if os.path.getsize("gulag_rules.json") == 0:
+        if os.path.getsize("gulag.json") == 0:
             pass
         else:
-            with open("gulag_rules.json", "r") as f:
+            with open("gulag.json", "r") as f:
                 ip_data = json.load(f)
             if client_ip in ip_data["Blacklisted IPs"]:
                 return True
@@ -83,7 +84,7 @@ class LegionnaireManager:
             ip_data = {"Blacklisted IPs": []}
 
         if client_ip not in ip_data["Blacklisted IPs"]:
-            ip_data["Blacklisted IPs"].append(client_ip)
+            ip_data["Blacklisted IPs"].append(str(client_ip))
             with open("security/gulag/gulag.json", "w") as gulag_file:
                 json.dump(ip_data, gulag_file)
 
