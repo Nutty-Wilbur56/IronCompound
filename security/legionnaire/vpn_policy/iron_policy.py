@@ -1,9 +1,6 @@
-import time
-
 from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
 from security.artificial_intelligence.initial_training.session_classifier import SessionClassifier
-from security.legionnaire.flooding.flooding_rule_manager import SynFloodingRuleManager
-from security.legionnaire.flooding.flooding_rule_manager import IcmpFloodingRuleManager
+from security.legionnaire.deep_packet_inspection.flooding.flooding_rule_manager import SynFloodingRuleManager
 from security.legionnaire.ips_manager import SecurityRule, LegionnaireManager
 from security.legionnaire.throttling.throttling_manager import ThrottleManager
 from security.legionnaire.violation_management import ViolationManager

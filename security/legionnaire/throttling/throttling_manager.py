@@ -1,12 +1,16 @@
 import time
 from collections import defaultdict, deque
 
+from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+
+
 class ThrottleManager:
     window_seconds = 10
     max_bytes_per_second = 2500 # 2.5 KB/second threshold due to very limited resources
     cool_down_period = 10 # throttling activity must exceed rate for 10 continous seconds
     byte_history = defaultdict(lambda:deque())
     violation_timestamp = defaultdict(lambda:None)
+    client_throttle_limit = defaultdict(lambda: ThrottleManager.max_bytes_per_second)
 
     @classmethod
     def record_transfer(cls, client_id, client_byte_count):
@@ -44,3 +48,13 @@ class ThrottleManager:
             cls.violation_timestamp[client_id] = None
 
         return cls.rate_of_transfer(client_id) > cls.max_bytes_per_second
+
+    @classmethod
+    def degrade_client(cls, client_id, degraded_limit=500):
+        cls.client_throttle_limit[client_id] = degraded_limit
+        LegionnaireLogger.log_legionnaire_activity(f"[Throttle] Client {client_id} degraded to {degraded_limit} B/s")
+
+    @classmethod
+    def reset_client_limit(cls, client_id):
+        cls.client_throttle_limit[client_id] = cls.max_bytes_per_second
+        cls.violation_timestamp[client_id] = None

@@ -1,5 +1,5 @@
 import logging
-
+"""Consider encrypting security logs"""
 class LegionnaireLogger:
     legionnaire_logfile = 'security.log'
     timeout_lock = logging.getLogger("timeout_logger")

@@ -1,4 +1,4 @@
-import socket
+import time
+from datetime import datetime
 
-hostname = socket.gethostname()
-print("Hostname:", hostname)
+print(time.time() + 100)

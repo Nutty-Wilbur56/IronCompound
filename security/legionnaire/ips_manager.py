@@ -1,22 +1,19 @@
 import json
 import threading
-import logging
 from datetime import datetime
-from xml.etree.ElementTree import tostring
 
 import joblib
 import torch
 
-from administration.gulag_manager import GulagManager
 from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
-from flooding.flooding_rule_manager import IcmpFloodingRuleManager, SynFloodingRuleManager
-from iron_server import session_lock, client_socket_lock, client_sockets_dict
+from security.legionnaire.deep_packet_inspection.flooding.flooding_rule_manager import IcmpFloodingRuleManager, SynFloodingRuleManager
 from security.artificial_intelligence.initial_training.session_classifier import LegionnaireMLDecisionEngine, \
     SessionClassifier, SessionAutoEncoder
 from security.session_tracking.sess_track import SessionTracker
 from security.legionnaire.violation_management import ViolationManager
 from vpn_policy.iron_policy import IronPolicy
 import os
+from security.risk_management.risk_manager import AdaptableRiskMonitor, AdaptiveThresholdManager
 
 
 class SecurityRule:
@@ -77,6 +74,7 @@ class LegionnaireManager:
                 return True
 
     def blacklist_client_ip(self, client_id, client_ip):
+        # function for blacklisting client public IPs
         if os.path.exists("security/gulag/gulag.json"):
             with open("security/gulag/gulag.json", "r") as f:
                 ip_data = json.load(f)
@@ -84,6 +82,7 @@ class LegionnaireManager:
             ip_data = {"Blacklisted IPs": []}
 
         if client_ip not in ip_data["Blacklisted IPs"]:
+            # if statement checking if client public ip is not in blacklisted file
             ip_data["Blacklisted IPs"].append(str(client_ip))
             with open("security/gulag/gulag.json", "w") as gulag_file:
                 json.dump(ip_data, gulag_file)
@@ -92,58 +91,97 @@ class LegionnaireManager:
                                                        f"for blacklist session evaluation at {datetime.now()}."
                                                        f"will be ending session.")
 
-        SessionTracker.end_session(client_id)
+            SessionTracker.end_session(client_id)
 
     def evaluate_session(self, client_id):
-        # evaluation of session and client against current policy engine
-
-        """
-        beginning of logic for comparing client against session rules
-        """
         session_info = SessionTracker.get_session_info(client_id)
+        if not session_info:
+            return False  # No active session found
 
-        """beginning of logic for flagging with machine learning models"""
         try:
-
+            # variables for Hybrid ML Evaluation
             hybrid_result = self.ml_engine.evaluate(session_info)
-            # integration of machine learning pipeline into the Legionnaire
+            risk_score = hybrid_result["risk_score"]
+            explanation = hybrid_result["explanation"]
+            supervised_prob = hybrid_result["supervised_prob"]
+            mse = hybrid_result["unsupervised_mse"]
+
+            AdaptableRiskMonitor.update(risk_score)
+            # calling adaptable risk monitor within evaluate session function
+
             LegionnaireLogger.log_legionnaire_activity(
-                f"[IPS] Risk Evaluation: Client {client_id} - Score: {hybrid_result['risk_score']:.2f}, "
-                f"Level: {hybrid_result['risk_level']}, Details: {hybrid_result['explanation']}"
+                f"[IPS] Client {client_id} - Risk Score: {risk_score:.2f} | "
+                f"Supervised: {supervised_prob:.2f} | MSE: {mse:.4f} | Explanation: {explanation}"
             )
+
+            """Beginning of rule fusion logic within IPS (Look into moving to violation management)"""
+            if risk_score >= 0.75 and session_info.replay_violations >= 2:
+                ViolationManager.record_violation("Hybrid ML + Replay", client_id)
+                LegionnaireLogger.log_legionnaire_activity(
+                    f"[IPS-FUSION] Client {client_id} flagged: High ML score + Replay violations."
+                )
+                return True
+
+            if risk_score >= 0.65 and session_info.icmp_flood_violations >= 2:
+                ViolationManager.record_violation("Hybrid ML + ICMP Flood", client_id)
+                LegionnaireLogger.log_legionnaire_activity(
+                    f"[IPS-FUSION] Client {client_id} flagged: ML score + ICMP flood."
+                )
+                return True
+
+            if risk_score >= 0.6 and session_info.syn_flood_violations >= 1:
+                ViolationManager.record_violation("Hybrid ML + SYN Flood", client_id)
+                LegionnaireLogger.log_legionnaire_activity(
+                    f"[IPS-FUSION] Client {client_id} flagged: ML score + SYN flood."
+                )
+                return True
 
             if hybrid_result["final_flag"]:
                 ViolationManager.record_violation("Hybrid ML Model Flagged", client_id)
+                LegionnaireLogger.log_legionnaire_activity(
+                    f"[IPS-FUSION] Client {client_id} flagged: ML score alone."
+                )
+
+                rule_triggered = False
+                for rule in self.policy_engine.active_compound_rules:
+                    # beginning of initial
+                    try:
+                        if rule.condition(session_info, client_id):
+                            rule.action(session_info, client_id)
+                            rule_triggered = True
+                            break
+                    except Exception as e:
+                        LegionnaireLogger.log_legionnaire_activity(
+                            f"[IPS ERROR] Rule '{rule.name}' failed: {e}"
+                        )
+
+                # No policy rule triggered → possible false positive
+                if not rule_triggered:
+                    AdaptiveThresholdManager.false_positive_feedback()
+                    LegionnaireLogger.log_legionnaire_activity(
+                        f"[IPS] False positive detected (ML-only flag with no rule match): {client_id}"
+                    )
+
                 return True
+            """Ending of logic for hybrid rule fusion"""
 
         except Exception as e:
             LegionnaireLogger.log_legionnaire_activity(
-                f"[ML-IPS ERROR] Hybrid model failed for client {client_id}: {e}"
+                f"[IPS ERROR] Hybrid ML evaluation failed for client {client_id}: {e}"
             )
-        """ending of logic for flagging with machine learning models"""
 
+        # Continue to check static rules (if not flagged by ML)
         for rule in self.policy_engine.active_compound_rules:
-            # Evaluation of all rules that exist in the rule engine
             try:
-                # Support rules that expect either (session) or (session, client_id)
-                if rule.condition.__code__.co_argcount == 1:
-                    # checking to see if there's one argument in the Rule
-                    triggered = rule.condition(client_id)
-                    if triggered:
-                        rule.action(client_id)
-                        return True
-                elif rule.condition.__code__.co_argcount == 2:
-                    # checking to see if there's two arguments in the Rule
-                    triggered = rule.condition(session_info, client_id)
-                    if triggered:
-                        rule.action(session_info, client_id)
-                        return True
-
+                if rule.condition(session_info, client_id):
+                    rule.action(session_info, client_id)
+                    return True
             except Exception as e:
                 LegionnaireLogger.log_legionnaire_activity(
-                    f"[IPS ERROR] Rule '{rule.name}' failed for client {client_id}: {e}"
+                    f"[IPS ERROR] Rule '{rule.name}' failed: {e}"
                 )
-        return False
+
+        return False  # Client session is clean
 
     def check_if_flagged_for_disconnect(self, client_id):
         # checking to see if session is flagged for disconnection

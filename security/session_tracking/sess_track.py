@@ -1,6 +1,6 @@
 import threading
 from collections import defaultdict, deque
-
+from security.risk_management.risk_manager import AdaptableRiskMonitor, AdaptiveThresholdManager
 
 class SessionTracker:
     nonces = set()
@@ -11,6 +11,7 @@ class SessionTracker:
     client_ip_mapping = {}
     tracker_lock = threading.Lock()
     session_payloads = defaultdict(list)
+    current_interval_time = 0
 
     @staticmethod
     def session_creation(client_id, ip_address, connection_time, **kwargs):
@@ -23,6 +24,9 @@ class SessionTracker:
                 **kwargs
             }
             SessionTracker.client_ip_mapping[ip_address] = client_id
+
+            AdaptiveThresholdManager.register_session()
+            #calling the adaptive threshold manager's register session function
 
     @staticmethod
     def get_client_id(client_ip):

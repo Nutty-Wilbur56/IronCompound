@@ -1,6 +1,9 @@
 import time
 from collections import deque
 
+from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+
+
 class ReplayProtection:
     def __init__(self, max_nonces=1000, ttl=30):
         # initial creation of replay protector object, will accept 1000 nonces
@@ -14,20 +17,15 @@ class ReplayProtection:
         assert isinstance(nonce, bytes) and len(nonce) == 8
         return nonce in self.recent_nonces
 
-    def register_nonce(self, nonce: bytes):
-        # register nonce
-        if len(self.queue) == self.queue.maxlen:
-            # check to see if the current nonce queue has reached its max length
-            old = self.queue.popleft()
-            self.recent_nonces.discard(old)
-
-        self.queue.append(nonce)
-        self.recent_nonces.add(nonce)
-
     def check_and_register_nonce(self, nonce: bytes):
         # checking if nonce is in list of session nonces
         # if nonce is, returns true, else appends nonce to recent
         # nonces along with a time to live
+        # also check to see if current length of queue is longer than it is supposed to be
+        if self.is_replay_attack(nonce):
+            LegionnaireLogger.log_legionnaire_activity("Replay attack detected")
+            return True
+
         current_time = time.time()
         if nonce in self.recent_nonces:
             return True

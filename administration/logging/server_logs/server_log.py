@@ -1,4 +1,6 @@
 import logging
+
+"""Consider encrypting session logs"""
 class IronLog:
     iron_logger = 'iron_log.log'
     timeout_lock = logging.getLogger("iron_logger")

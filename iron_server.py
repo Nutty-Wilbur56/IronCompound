@@ -3,12 +3,17 @@ import json
 import os, socket, fcntl, struct, select, subprocess
 from datetime import datetime
 
+import HKDF
+import ec
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import logging
 import threading
 from itertools import count
+
+from tcp.hub import current_time
+
 from administration.logging.server_logs.server_log import IronLog
 from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
 from concurrent.futures import ThreadPoolExecutor
@@ -22,16 +27,7 @@ from security.legionnaire.ips_manager import LegionnaireManager
 from security.legionnaire.throttling.throttling_manager import ThrottleManager
 from security.legionnaire.violation_management import ViolationManager
 from security.session_tracking.sess_track import SessionTracker
-
-"""
-integrate the following code into the server loop 
-
-is_flagged = IronSessionClassifier.classify_session(session)
-if is_flagged:
-    ViolationManager.record_violation(session, "Model Classifier Flag", session.client_id)
-    logging.warning(f"[IPS] Session {session.client_id} flagged by model classifier."
-"""
-
+from security.legionnaire.deep_packet_inspection.packet_inspection import PacketInspector
 # import geoip2.database as gip2
 
 TUNSETIFF = 0x400454ca
@@ -49,9 +45,6 @@ client_sockets_dict = {}
 
 client_counter = count(1)
 
-ADMINISTRATIVE_SOCK = 'administration/iron_admin.sock'
-# not using actual name of sock file, since code will be public on github
-
 """beginning of IPS/rules creation"""
 # global instance of ips manager class
 legionnaire_ips = LegionnaireManager()
@@ -60,6 +53,8 @@ legionnaire_ips = LegionnaireManager()
 
 replay_protection = ReplayProtection()
 
+key_rotation_interval = 1800
+# key rotation every 30 minutes
 
 def load_schindlers_list():
     # function handles blacklisted tokens
@@ -71,7 +66,6 @@ def load_schindlers_list():
             with gulag_lock:
                 gulag_tokens = set(tokens)
         logging.info("[+] Loaded blacklist from file.")
-
 
 def administrative_command_interface():
     # interface for managing client connections
@@ -155,6 +149,46 @@ def public_key_fingerprint(public_key):
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
 
+def rotate_auth_keys(client_socket, aes_key, client_id):
+    # function for rotating authentication keys
+    try:
+        if datetime.now() >= SessionTracker.current_interval_time:
+            client_socket.sendall(b"Roate key request from server")
+            # 2. Receive client's ECDH public key
+            length_bytes = client_socket.recv(4)
+            pub_length = int.from_bytes(length_bytes, 'big')
+            client_ec_pub_bytes = client_socket.recv(pub_length)
+            client_ec_pubkey = serialization.load_pem_public_key(client_ec_pub_bytes)
+
+            # 3. Generate new ECDH key
+            new_server_ec_priv = ec.generate_private_key(ec.SECP384R1())
+            new_server_ec_pub = new_server_ec_priv.public_key()
+
+            server_ec_pub_bytes = new_server_ec_pub.public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            client_socket.sendall(len(server_ec_pub_bytes).to_bytes(4, 'big') + server_ec_pub_bytes)
+
+            # 4. Derive new shared secret and AES-GCM key
+            new_shared_secret = new_server_ec_priv.exchange(ec.ECDH(), client_ec_pubkey)
+            salt = os.urandom(16)
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                info=b"IronCompoundVPN-rekey"
+            )
+            new_session_key = hkdf.derive(new_shared_secret)
+            aes = AESGCM(new_session_key)
+
+            IronLog.log_server_activity(f"[Client {client_id}] Key rotation complete.")
+            SessionTracker.current_interval_time = time.time() + key_rotation_interval
+
+    except Exception as e:
+        IronLog.log_server_activity(f"[!] Key rotation failed for {SessionTracker.client_sessions[client_id]}: {e}")
+        # optionally: terminate session or revert
+
 
 def handle_client(client_socket, addr, client_id):
     global active_clients
@@ -187,46 +221,53 @@ def handle_client(client_socket, addr, client_id):
         with open('authorized_clients/iron_client_public.pem', 'rb') as f:
             trusted_client_key = serialization.load_pem_public_key(f.read())
 
-        # Receival and parsing of received key
-        client_public_key_bytes = client_socket.recv(2048)
-        received_client_key = serialization.load_pem_public_key(client_public_key_bytes)
+            # Receive and verify signed hello from client
+            hello_len = int.from_bytes(client_socket.recv(4), 'big')
+            hello_bytes = client_socket.recv(hello_len)
+            signature = client_socket.recv(256)
 
-        # Verification of key fingerprint
-        if public_key_fingerprint(trusted_client_key) != public_key_fingerprint(received_client_key):
-            IronLog.log_server_activity(
-                f"[!] Client public key from address {addr[0]} does not match trusted key! Connection rejected")
-            client_socket.close()
-            return
-
-        client_public_key = received_client_key  # Verified client key
-        IronLog.log_server_activity(f"[+] Client public key from {addr[0]} verified successfully")
-
-        # Generate and send server key
-        server_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        server_public_key = server_private_key.public_key()
-        client_socket.sendall(server_public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        ))
-
-        # Receiving and decryption of AES key
-        encrypted_key = client_socket.recv(4096)
-        aes_key = server_private_key.decrypt(
-            encrypted_key,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
+            trusted_client_key.verify(
+                signature,
+                hello_bytes,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
             )
-        )
-        aes = AESGCM(aes_key)
-        IronLog.log_server_activity(f"[+] AES key exchange complete with {addr}")
 
-        token = uuid.uuid1().hex
+            hello = json.loads(hello_bytes)
+            client_nonce = bytes.fromhex(hello['nonce'])
+            client_ec_pub = serialization.load_pem_public_key(hello['ecdh_pub'].encode())
 
-        fingerprint = public_key_fingerprint(client_public_key).hex()
+            # Generate server ECDH key
+            server_ec_priv = ec.generate_private_key(ec.SECP384R1())
+            server_ec_pub = server_ec_priv.public_key()
+            server_ec_pub_bytes = server_ec_pub.public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            client_socket.sendall(len(server_ec_pub_bytes).to_bytes(4, 'big') + server_ec_pub_bytes)
+
+            # Derive shared secret and session key
+            shared_secret = server_ec_priv.exchange(ec.ECDH(), client_ec_pub)
+
+            session_token = uuid.uuid4().hex
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=client_nonce[:16],
+                info=b"IronCompoundVPN-session-key"
+            )
+            session_key = hkdf.derive(shared_secret)
+            aes = AESGCM(session_key)
+
+            IronLog.log_server_activity(f"[+] Secure handshake complete with {addr[0]}")
+
+            fingerprint = public_key_fingerprint(trusted_client_key).hex()
 
         with session_lock:
+            """add rotation of keys function within session lock"""
             # session lock to prevent race conditions
             # session tracker logic
             SessionTracker.session_creation(
@@ -237,7 +278,6 @@ def handle_client(client_socket, addr, client_id):
                 disconnection_time=None,
                 last_activity=datetime.now(),
                 initial_ip=addr[0],
-                token=token,
                 client_socket=client_socket,
                 client_fingerprint=fingerprint,
                 bytes_received=0,
@@ -254,7 +294,7 @@ def handle_client(client_socket, addr, client_id):
             )
 
         IronLog.log_server_activity(
-            f"[Client {client_id}], tunnel_ip: {tun_ip} tunnel:{tun_name} Session token: {token}]")
+            f"[Client {client_id}], tunnel_ip: {tun_ip} tunnel:{tun_name}")
         legionnaire_ips.start_packet_sniffers(client_id, None)
         # Tunnel communication loop
         while True:
@@ -291,13 +331,13 @@ def handle_client(client_socket, addr, client_id):
                     break
                 nonce = data[:12]
                 ciphertext = data[12:]
-
+                """fix"""
                 if replay_protection.existing_nonce(nonce):
                     # checking to see if nonce that packet generated already exists
                     LegionnaireLogger.log_legionnaire_activity(f"[!] Replay attack detected from {addr} at {datetime.now()}. dropping packet.")
                     ViolationManager.record_violation("Replay Violation", client_id)
                     continue
-
+                """fix"""
                 replay_protection.register_nonce(nonce)
 
                 # track incoming encrypted packet size for throttling
@@ -320,8 +360,13 @@ def handle_client(client_socket, addr, client_id):
                     # update on each token in session lock
                     SessionTracker.client_sessions[client_id]["bytes_sent"] += len(packet)
                     SessionTracker.client_sessions[client_id]["last_activity"] = datetime.now()
-
-                os.write(tun, packet)
+                if PacketInspector.validate_received_packet(packet, tun_ip):
+                    os.write(tun, packet)
+                else:
+                    LegionnaireLogger.log_legionnaire_activity(
+                        f"[!] Dropped malformed or unauthorized packet from session {client_id}"
+                    )
+                    ViolationManager.record_violation("Malformed/Invalid Packet", client_id)
 
                 if tun in r:
                     packet = os.read(tun, 2048)
@@ -366,12 +411,7 @@ def vpn_server(host='0.0.0.0', port=1871):
     server_socket.listen()
     IronLog.log_server_activity(f"VPN server listening on {host}:{port}")
 
-    """# persistant token black list (enables a permanent token blacklist)
-    try:
-        with open('security/gulag/gulag.json', "r") as gulag_file:
-            gulag_tokens = set(json.load(gulag_file))
-    except FileNotFoundError:
-        gulag_tokens = set()"""
+    SessionTracker.current_interval_time = time.time() + key_rotation_interval
 
     with ThreadPoolExecutor(max_workers=25) as executor:
         # threading.Thread(target=administrative_command_interface, daemon=True).start()

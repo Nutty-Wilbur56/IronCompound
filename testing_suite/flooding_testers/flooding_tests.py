@@ -1,4 +1,4 @@
-from security.legionnaire.flooding.flooding_rule_manager import SynFloodingRuleManager, IcmpFloodingRuleManager
+from security.legionnaire.deep_packet_inspection.flooding.flooding_rule_manager import SynFloodingRuleManager, IcmpFloodingRuleManager
 import time
 
 def test_syn_flood_detection():
