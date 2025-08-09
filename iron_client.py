@@ -10,16 +10,18 @@ import subprocess
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import logging
+import vpn_logging
 import time
+
+from vpn_logging.server_logs.server_log import IronLog
 
 TUNSETIFF = 0x400454ca
 IFF_TUN   = 0x0001
 IFF_NO_PI = 0x1000
 
-logging.basicConfig(
+vpn_logging.basicConfig(
     filename='vpn_client.log',
-    level=logging.INFO,
+    level=vpn_logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 
@@ -70,7 +72,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     sock = socket.socket()
     sock.connect((server_ip, port))
     # creation of socket
-    logging.info(f"Connected to VPN server at {server_ip}:{port}")
+    IronLog.info(f"Connected to VPN server at {server_ip}:{port}")
 
     pubkey_bytes = public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
@@ -90,22 +92,22 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
 
     # Comparing fingerprints of received server key and actual public server jey
     if public_key_fingerprint(trusted_server_key) != public_key_fingerprint(server_public_key):
-        logging.error("[!] Server public key does not match trusted key! Possible MITM.")
+        vpn_logging.error("[!] Server public key does not match trusted key! Possible MITM.")
         sock.close()
         exit(1)
 
     # server public key has been identified
     official_server_key = server_public_key
-    logging.info("[+] Server public key verified successfully")
+    vpn_logging.info("[+] Server public key verified successfully")
 
     # loading of client's saved token and/or starting of new session
     try:
         with open('client_token.txt', 'r') as client_token_file:
             client_token = client_token_file.read().strip()
-            logging.info(f'[+] Loaded existing session token: {client_token}')
+            vpn_logging.info(f'[+] Loaded existing session token: {client_token}')
     except FileNotFoundError:
         client_token = 'New'
-        logging.info('[+] No existing token for client was found, requesting new session')
+        vpn_logging.info('[+] No existing token for client was found, requesting new session')
 
     sock.sendall(client_token.encode() + b"\n")
 
@@ -122,7 +124,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
     sock.send(enc_key)
 
     aes = AESGCM(aes_key)
-    logging.info("AES key exchanged")
+    vpn_logging.info("AES key exchanged")
 
     # beginning of new session token
     if client_token == 'New':
@@ -133,10 +135,10 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
             with open('client_token.txt', 'w') as token_file:
                 token_file.write(new_client_token)
 
-            logging.info(f'[+] Received and saved new session token: {new_client_token}')
+            vpn_logging.info(f'[+] Received and saved new session token: {new_client_token}')
 
         else:
-            logging.warning(f'[!] Unexpected token response from server: {token_response}')
+            vpn_logging.warning(f'[!] Unexpected token response from server: {token_response}')
     # ending to generating new session token
 
     while True:
@@ -160,7 +162,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
             ciphertext = data[12:]
             try:
                 if nonce in recent_nonces:
-                    logging.warning("Replay attack detected: repeated nonce!")
+                    vpn_logging.warning("Replay attack detected: repeated nonce!")
                     continue  # or break, depending on severity
                 recent_nonces.add(nonce)
                 nonce_queue.append(nonce)
@@ -172,7 +174,7 @@ def vpn_client(server_ip='192.168.8.1', port=1871):
                 recent_nonces.add(nonce)
                 os.write(tun, packet)
             except Exception as e:
-                logging.error(f"Decryption error: {e}")
+                vpn_logging.error(f"Decryption error: {e}")
 
 if __name__ == "__main__":
     vpn_client()

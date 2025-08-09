@@ -1,3 +1,5 @@
+import json
+import os
 import threading
 from collections import defaultdict, deque
 from security.risk_management.risk_manager import AdaptableRiskMonitor, AdaptiveThresholdManager
@@ -65,10 +67,22 @@ class SessionTracker:
     @staticmethod
     def end_session(client_id):
         # ending session if ordered to by IPS or Rule engine
+        SessionTracker.write_to_termination_file(SessionTracker.client_sessions[client_id])
+        # also include exportation to a json file
         with SessionTracker.tracker_lock:
             session = SessionTracker.client_sessions.pop(client_id, None)
             if session and "ip" in session:
                 SessionTracker.client_ip_mapping.pop(session["ip"], None)
+
+    @staticmethod
+    def write_to_termination_file(session):
+        global terminated
+        if os.path.exists("test_gulag.json"):
+            with open("test_gulag.json", "r") as f:
+                terminated = json.load(f)
+        terminated['Terminated Sessions'].append(session)
+        with open('data.json', 'w', encoding='utf-8') as f:
+            json.dump(terminated, f, ensure_ascii=False, indent=4)
 
     @staticmethod
     def is_session_flagged(client_id):

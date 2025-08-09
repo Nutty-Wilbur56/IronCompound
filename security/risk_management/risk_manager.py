@@ -6,13 +6,16 @@ class AdaptableRiskMonitor:
     # class for managing risk with potential adversarial sessions
     session_window_size = 50
     risk_scores = deque(maxlen=session_window_size)
+    risk_average = 0
 
     @classmethod
     def update(cls, risk_score):
         cls.risk_scores.append(risk_score)
+        AdaptableRiskMonitor.risk_average()
 
     @classmethod
     def risk_average(cls):
+        AdaptableRiskMonitor.risk_average = sum(cls.risk_scores) / len(cls.risk_scores) if cls.risk_scores else 0.0
         return sum(cls.risk_scores) / len(cls.risk_scores) if cls.risk_scores else 0.0
 
 class AdaptiveThresholdManager:

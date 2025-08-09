@@ -14,7 +14,8 @@ import numpy as np
 from sympy.codegen.cnodes import static
 
 # loading pseudo session data
-session_df = pd.read_csv('training_data.csv')
+DATA_PATH = Path(__file__).parent / "training_data.csv"
+session_df = pd.read_csv(DATA_PATH)
 
 # Feature and Label selection
 X = session_df[["bytes_sent", "bytes_received", "replay_violations", "throttle_violations", "syn_flood_violations", "icmp_flood_violations",
@@ -91,7 +92,7 @@ for epoch in range(200):
         loss = criterion(output, y_batch)
         loss.backward()
         optimizer.step()
-    print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
+    #print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
 
 
 # Save model and scaler
@@ -117,7 +118,7 @@ for epoch in range(500):
         auto_optimizer.step()
         epoch_loss += loss.item()
 
-    print(f"Epoch {epoch + 1}, Loss: {epoch_loss:.4f}")
+    #print(f"Epoch {epoch + 1}, Loss: {epoch_loss:.4f}")
 
 # Save the trained autoencoder and scaler
 torch.save(auto_encoder_model.state_dict(), 'autoencoder.pt')
@@ -142,18 +143,20 @@ class LegionnaireMLDecisionEngine:
         Main method: evaluates a session using hybrid ML logic.
         Returns structured risk score and decision.
         """
+        #print('hi')
+        #print(session_obj)
         session_features = np.array([
-            session_obj.bytes_sent,
-            session_obj.bytes_received,
-            session_obj.replay_violations,
-            session_obj.throttle_violations,
-            session_obj.syn_flood_violations,
-            session_obj.icmp_flood_violations,
-            session_obj.duration
+            session_obj["bytes_sent"],
+            session_obj["bytes_received"],
+            session_obj["replay_violations"],
+            session_obj["throttle_violations"],
+            session_obj["syn_flood_violations"],
+            session_obj["icmp_flood_violations"],
+            session_obj["duration"]
         ])
 
-        scaled = self.scaler.transform(session_features)
-        x = torch.tensor(scaled, dtype=torch.float32)
+        scaled = self.scaler.transform(session_features.reshape(1, -1))
+        x = torch.tensor(scaled, dtype=torch.float32).squeeze(0)
 
         # Supervised confidence score
         with torch.no_grad():
@@ -205,4 +208,3 @@ class LegionnaireMLDecisionEngine:
 
         prediction = SessionClassifier.model.predict([features])[0]
         return prediction == 1
-

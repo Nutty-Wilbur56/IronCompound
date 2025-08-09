@@ -2,7 +2,7 @@ import ipaddress
 
 from scapy.layers.inet import IP
 
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 
 
 class PacketInspector:

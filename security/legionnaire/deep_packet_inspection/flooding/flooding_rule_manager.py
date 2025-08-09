@@ -1,12 +1,12 @@
 # flooding rule manager
 
 from scapy.all import sniff, TCP, IP, ICMP
-import logging
+import vpn_logging
 # syn_flood_rule.py
 import time
 from collections import defaultdict
 
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 from administration.utils.packet_utils import extract_payload
 from security.session_tracking.sess_track import SessionTracker
 from security.legionnaire.violation_management import ViolationManager
@@ -116,7 +116,7 @@ class IcmpFloodingRuleManager:
         now = time.time()
 
         IcmpFloodingRuleManager.icmp_attempts[client_id] = [
-            # logging icmp echo request attempts
+            # vpn_logging icmp echo request attempts
             t for t in IcmpFloodingRuleManager.icmp_attempts[client_id]
             if now - t <= IcmpFloodingRuleManager.ICMP_WINDOW
         ]

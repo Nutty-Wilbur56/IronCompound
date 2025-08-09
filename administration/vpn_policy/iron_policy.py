@@ -1,4 +1,4 @@
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 from security.artificial_intelligence.initial_training.session_classifier import SessionClassifier
 from security.legionnaire.deep_packet_inspection.flooding.flooding_rule_manager import SynFloodingRuleManager
 from security.legionnaire.ips_manager import SecurityRule, LegionnaireManager
@@ -24,7 +24,6 @@ will be integrating security rule for inactivity timeout in the future
 class IronPolicy:
     def __init__(self):
         self.active_compound_rules = []
-        self.legionnaire = LegionnaireManager()
 
     def register_initial_policies(self):
         self.active_compound_rules = [

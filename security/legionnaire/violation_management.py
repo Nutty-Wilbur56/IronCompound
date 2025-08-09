@@ -1,6 +1,6 @@
-import logging
+import vpn_logging
 
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 from security.session_tracking.sess_track import SessionTracker
 
 class ViolationManager:

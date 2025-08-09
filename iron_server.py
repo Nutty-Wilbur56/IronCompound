@@ -8,14 +8,14 @@ import ec
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import logging
+import vpn_logging
 import threading
 from itertools import count
 
 from tcp.hub import current_time
 
-from administration.logging.server_logs.server_log import IronLog
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.server_logs.server_log import IronLog
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 import time
@@ -65,7 +65,7 @@ def load_schindlers_list():
             tokens = json.load(file)
             with gulag_lock:
                 gulag_tokens = set(tokens)
-        logging.info("[+] Loaded blacklist from file.")
+        vpn_logging.info("[+] Loaded blacklist from file.")
 
 def administrative_command_interface():
     # interface for managing client connections
@@ -274,12 +274,13 @@ def handle_client(client_socket, addr, client_id):
                 client_id=client_id,
                 ip_address=tun_ip,
                 tunnel=tun_name,
-                connection_time=datetime.now(),
+                connection_time=datetime.utcnow(),
                 disconnection_time=None,
-                last_activity=datetime.now(),
+                last_activity=datetime.utcnow(),
                 initial_ip=addr[0],
                 client_socket=client_socket,
                 client_fingerprint=fingerprint,
+                session_id=session_token,
                 bytes_received=0,
                 bytes_sent=0,
                 client_violations={
@@ -290,11 +291,22 @@ def handle_client(client_socket, addr, client_id):
                 },
                 client_inactivity_warned = False,
                 flagged_for_disconnect=False,
-                flagged_for_blacklist=False
+                flagged_for_blacklist=False,
+                session_events=[
+
+                ]
             )
+            """
+            Session events within the session tracker will look something like the following
+            {"type": "AUTH", "result": "success", "timestamp": datetime.utcnow().isoformat() + "Z"},
+            {"type": "PACKET", "size": 512, "flags": "SYN", "direction": "inbound", "timestamp": datetime.utcnow().isoformat() + "Z"},
+            {"type": "ML_SCORE", "score": 0.73, "features": {"feature1": 0.5, "feature2": 0.2}, "timestamp": datetime.utcnow().isoformat() + "Z"},
+            {"type": "IPS_RULE_HIT", "rule": "Hybrid ML + SYN Flood", "timestamp": datetime.utcnow().isoformat() + "Z"},
+            {"type": "ACTION", "action": "quarantine", "timestamp": datetime.utcnow().isoformat() + "Z"}
+            """
 
         IronLog.log_server_activity(
-            f"[Client {client_id}], tunnel_ip: {tun_ip} tunnel:{tun_name}")
+            f"[Client {client_id}], tunnel_ip: {tun_ip} tunnel:{tun_name}, session ID: {session_token}")
         legionnaire_ips.start_packet_sniffers(client_id, None)
         # Tunnel communication loop
         while True:
@@ -331,14 +343,16 @@ def handle_client(client_socket, addr, client_id):
                     break
                 nonce = data[:12]
                 ciphertext = data[12:]
-                """fix"""
-                if replay_protection.existing_nonce(nonce):
+
+                if replay_protection.is_replay_attack(nonce):
                     # checking to see if nonce that packet generated already exists
-                    LegionnaireLogger.log_legionnaire_activity(f"[!] Replay attack detected from {addr} at {datetime.now()}. dropping packet.")
+                    LegionnaireLogger.log_legionnaire_activity(f"[!] Replay attack detected from {addr, tun_ip} "
+                                                               f"with token {session_token} at {datetime.now()}. dropping packet.")
                     ViolationManager.record_violation("Replay Violation", client_id)
                     continue
-                """fix"""
-                replay_protection.register_nonce(nonce)
+
+                replay_protection.check_and_register_nonce(nonce)
+
 
                 # track incoming encrypted packet size for throttling
                 ThrottleManager.record_transfer(client_id, len(ciphertext))
@@ -360,6 +374,7 @@ def handle_client(client_socket, addr, client_id):
                     # update on each token in session lock
                     SessionTracker.client_sessions[client_id]["bytes_sent"] += len(packet)
                     SessionTracker.client_sessions[client_id]["last_activity"] = datetime.now()
+
                 if PacketInspector.validate_received_packet(packet, tun_ip):
                     os.write(tun, packet)
                 else:
@@ -378,11 +393,7 @@ def handle_client(client_socket, addr, client_id):
                         SessionTracker.client_sessions[client_id]["bytes_received"] += len(packet)
                         SessionTracker.client_sessions[client_id]["last_activity"] = datetime.now()
 
-                    # Tracking of outgoing cleartext payload size
-                    """ThrottleManager.record_transfer(client_id, len(packet))"""
                     client_socket.sendall(encrypted)
-
-                    legionnaire_ips.evaluate_session(client_id)
 
         # ending to tunnel and authentication logic
     except Exception as e:

@@ -5,16 +5,15 @@ from datetime import datetime
 import joblib
 import torch
 
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 from security.legionnaire.deep_packet_inspection.flooding.flooding_rule_manager import IcmpFloodingRuleManager, SynFloodingRuleManager
 from security.artificial_intelligence.initial_training.session_classifier import LegionnaireMLDecisionEngine, \
     SessionClassifier, SessionAutoEncoder
 from security.session_tracking.sess_track import SessionTracker
 from security.legionnaire.violation_management import ViolationManager
-from vpn_policy.iron_policy import IronPolicy
 import os
 from security.risk_management.risk_manager import AdaptableRiskMonitor, AdaptiveThresholdManager
-
+from ..legionnaire.configuration.legionnaire_configuration import LegionnaireConfiguration
 
 class SecurityRule:
     """
@@ -34,12 +33,16 @@ class LegionnaireManager:
     """
 
     def __init__(self):
+        from administration.vpn_policy.iron_policy import IronPolicy
         # The IPS rule set is controlled by the Iron policy
         self.policy_engine = IronPolicy()
         self.policy_engine.register_initial_policies()
         # registering policies on creation of IPS object
         self.enforcement = {}  # tracking of client actions
         self.interface = 'tun0'
+
+        # loading configuration file
+        LegionnaireConfiguration.load()
 
         # Load hybrid ML models
         clf = SessionClassifier()
@@ -49,7 +52,6 @@ class LegionnaireManager:
         ae = SessionAutoEncoder()
         ae.load_state_dict(torch.load("autoencoder.pt"))
         ae.eval()
-
         scaler = joblib.load("scaler.pkl")
 
         self.ml_engine = LegionnaireMLDecisionEngine()
@@ -109,79 +111,79 @@ class LegionnaireManager:
             AdaptableRiskMonitor.update(risk_score)
             # calling adaptable risk monitor within evaluate session function
 
-            LegionnaireLogger.log_legionnaire_activity(
-                f"[IPS] Client {client_id} - Risk Score: {risk_score:.2f} | "
-                f"Supervised: {supervised_prob:.2f} | MSE: {mse:.4f} | Explanation: {explanation}"
-            )
-
-            """Beginning of rule fusion logic within IPS (Look into moving to violation management)"""
-            if risk_score >= 0.75 and session_info.replay_violations >= 2:
-                ViolationManager.record_violation("Hybrid ML + Replay", client_id)
+            if LegionnaireConfiguration.is_in_monitor_mode():
+                # if legionnaire is in passive mode
                 LegionnaireLogger.log_legionnaire_activity(
-                    f"[IPS-FUSION] Client {client_id} flagged: High ML score + Replay violations."
+                    f"[MONITOR-ONLY] Client {client_id} - Risk: {hybrid_result['risk_score']:.2f}, Flag: {hybrid_result['final_flag']}"
                 )
-                return True
-
-            if risk_score >= 0.65 and session_info.icmp_flood_violations >= 2:
-                ViolationManager.record_violation("Hybrid ML + ICMP Flood", client_id)
+                # enforcement of suppression
+                return False
+            else:
+                # logic if legionnaire is not in passive mode
                 LegionnaireLogger.log_legionnaire_activity(
-                    f"[IPS-FUSION] Client {client_id} flagged: ML score + ICMP flood."
-                )
-                return True
-
-            if risk_score >= 0.6 and session_info.syn_flood_violations >= 1:
-                ViolationManager.record_violation("Hybrid ML + SYN Flood", client_id)
-                LegionnaireLogger.log_legionnaire_activity(
-                    f"[IPS-FUSION] Client {client_id} flagged: ML score + SYN flood."
-                )
-                return True
-
-            if hybrid_result["final_flag"]:
-                ViolationManager.record_violation("Hybrid ML Model Flagged", client_id)
-                LegionnaireLogger.log_legionnaire_activity(
-                    f"[IPS-FUSION] Client {client_id} flagged: ML score alone."
+                    f"[IPS] Client {client_id} - Risk Score: {risk_score:.2f} | "
+                    f"Supervised: {supervised_prob:.2f} | MSE: {mse:.4f} | Explanation: {explanation}"
                 )
 
-                rule_triggered = False
-                for rule in self.policy_engine.active_compound_rules:
-                    # beginning of initial
-                    try:
-                        if rule.condition(session_info, client_id):
-                            rule.action(session_info, client_id)
-                            rule_triggered = True
-                            break
-                    except Exception as e:
-                        LegionnaireLogger.log_legionnaire_activity(
-                            f"[IPS ERROR] Rule '{rule.name}' failed: {e}"
-                        )
-
-                # No policy rule triggered → possible false positive
-                if not rule_triggered:
-                    AdaptiveThresholdManager.false_positive_feedback()
+                """Beginning of rule fusion logic within IPS (Look into moving to violation management)"""
+                if risk_score >= 0.75 and session_info.replay_violations >= 2:
+                    ViolationManager.record_violation("Hybrid ML + Replay", client_id)
                     LegionnaireLogger.log_legionnaire_activity(
-                        f"[IPS] False positive detected (ML-only flag with no rule match): {client_id}"
+                        f"[IPS-FUSION] Client {client_id} flagged: High ML score + Replay violations."
+                    )
+                    return True
+
+                if risk_score >= 0.65 and session_info.icmp_flood_violations >= 2:
+                    ViolationManager.record_violation("Hybrid ML + ICMP Flood", client_id)
+                    LegionnaireLogger.log_legionnaire_activity(
+                        f"[IPS-FUSION] Client {client_id} flagged: ML score + ICMP flood."
+                    )
+                    return True
+
+                if risk_score >= 0.6 and session_info.syn_flood_violations >= 1:
+                    ViolationManager.record_violation("Hybrid ML + SYN Flood", client_id)
+                    LegionnaireLogger.log_legionnaire_activity(
+                        f"[IPS-FUSION] Client {client_id} flagged: ML score + SYN flood."
+                    )
+                    return True
+
+                if hybrid_result["final_flag"]:
+                    ViolationManager.record_violation("Hybrid ML Model Flagged", client_id)
+                    LegionnaireLogger.log_legionnaire_activity(
+                        f"[IPS-FUSION] Client {client_id} flagged: ML score alone."
                     )
 
-                return True
-            """Ending of logic for hybrid rule fusion"""
+                    rule_triggered = False
+                    for rule in self.policy_engine.active_compound_rules:
+                        # beginning of initial
+                        # Continue to check static rules (if not flagged by ML)
+                        try:
+                            if rule.condition(session_info, client_id):
+                                rule.action(session_info, client_id)
+                                rule_triggered = True
+                                break
+                        except Exception as e:
+                            LegionnaireLogger.log_legionnaire_activity(
+                                f"[IPS ERROR] Rule '{rule.name}' failed: {e}"
+                            )
+
+                    # No policy rule triggered → possible false positive
+                    if not rule_triggered:
+                        AdaptiveThresholdManager.false_positive_feedback()
+                        LegionnaireLogger.log_legionnaire_activity(
+                            f"[IPS] False positive detected (ML-only flag with no rule match): {client_id}"
+                        )
+
+                    return True
+                """Ending of logic for hybrid rule fusion"""
+
+                return False  # Client session is clean
 
         except Exception as e:
             LegionnaireLogger.log_legionnaire_activity(
-                f"[IPS ERROR] Hybrid ML evaluation failed for client {client_id}: {e}"
+                f"[IPS ERROR] Hybrid ML evaluation failed for client {client_id} token {session_info.session_id}: {e}"
             )
 
-        # Continue to check static rules (if not flagged by ML)
-        for rule in self.policy_engine.active_compound_rules:
-            try:
-                if rule.condition(session_info, client_id):
-                    rule.action(session_info, client_id)
-                    return True
-            except Exception as e:
-                LegionnaireLogger.log_legionnaire_activity(
-                    f"[IPS ERROR] Rule '{rule.name}' failed: {e}"
-                )
-
-        return False  # Client session is clean
 
     def check_if_flagged_for_disconnect(self, client_id):
         # checking to see if session is flagged for disconnection

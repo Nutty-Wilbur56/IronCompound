@@ -1,11 +1,11 @@
 import os
 
-from administration.logging.admin_logs.administration_log import AdminLog
+from administration.vpn_logging.admin_logs.administration_log import AdminLog
 from security.legionnaire.ips_manager import LegionnaireManager
 from security.legionnaire.violation_management import ViolationManager
 import socket
 import threading
-import logging
+import vpn_logging
 import stat
 
 from security.session_tracking.sess_track import SessionTracker
@@ -39,7 +39,7 @@ class AdminManager:
     def handle_connection(self, conn):
         try:
             data = conn.recv(1024).decode().strip()
-            logging.info(f"[AdminSocket] Command received: {data}")
+            vpn_logging.info(f"[AdminSocket] Command received: {data}")
 
             parts = data.split()
             if not parts or parts[0] != admin_token:
@@ -48,7 +48,7 @@ class AdminManager:
 
             cmd = " ".join(parts[1:])
             response = self.nkvd_headquarters(cmd)
-            logging.info(f"[AdminSocket] Command '{cmd}' executed with result: {response}")
+            vpn_logging.info(f"[AdminSocket] Command '{cmd}' executed with result: {response}")
             conn.sendall(response.encode())
         except Exception as e:
             conn.sendall(f"Error: {str(e)}".encode())
@@ -82,7 +82,7 @@ class AdminManager:
             try:
                 os.remove(admin_file)
             except Exception as e:
-                logging.warning(f"Failed to remove admin socket file: {e}")
+                vpn_logging.warning(f"Failed to remove admin socket file: {e}")
             return "Admin socket shutting down"
 
         return "Unknown command"

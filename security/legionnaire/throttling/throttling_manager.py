@@ -1,7 +1,7 @@
 import time
 from collections import defaultdict, deque
 
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 
 
 class ThrottleManager:

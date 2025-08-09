@@ -1,7 +1,7 @@
 import time
 from collections import deque
 
-from administration.logging.security_logs.legionnaire_logger import LegionnaireLogger
+from administration.vpn_logging.security_logs.legionnaire_logger import LegionnaireLogger
 
 
 class ReplayProtection:
@@ -22,9 +22,13 @@ class ReplayProtection:
         # if nonce is, returns true, else appends nonce to recent
         # nonces along with a time to live
         # also check to see if current length of queue is longer than it is supposed to be
-        if self.is_replay_attack(nonce):
+        """if self.is_replay_attack(nonce):
             LegionnaireLogger.log_legionnaire_activity("Replay attack detected")
             return True
+
+            look into modularizing code for replay attack, so that registration of packet nonce
+            also checks if nonce is duplicate and can end loop for specific instance
+            """
 
         current_time = time.time()
         if nonce in self.recent_nonces:
